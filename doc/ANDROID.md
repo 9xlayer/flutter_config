@@ -1,14 +1,32 @@
-## Android Setup
+## Android Setup Guide
 
-**The following steps are required for Android**
+### Automated Setup (Recommended)
 
-You need to manually apply a plugin to your app, from `android/app/build.gradle`:
+You can automatically configure your Android project with a single command from your Flutter project root:
 
+```bash
+dart run flutter_config:setup --android
+```
+
+*(You can also use `dart run flutter_config:setup android` or `dart run flutter_config:setup` to configure both iOS and Android)*
+
+#### What the automated CLI does:
+1. **App Gradle**: Automatically adds `apply from: project(':flutter_config').projectDir.getPath() + "/dotenv.gradle"` to `android/app/build.gradle`.
+2. **R8 / Proguard**: Automatically creates or updates `android/app/proguard-rules.pro` with `-keep class **.BuildConfig { *; }` to prevent env variables from being stripped or obfuscated during release builds.
+
+---
+
+### Manual Setup (Alternative)
+
+If you prefer to configure Android manually:
+
+1. In `android/app/build.gradle`:
 Right below `apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"`
-
 add the following line:
 
-`apply from: project(':flutter_config').projectDir.getPath() + "/dotenv.gradle"`
+```groovy
+apply from: project(':flutter_config').projectDir.getPath() + "/dotenv.gradle"
+```
 
 **Building a release version**
 

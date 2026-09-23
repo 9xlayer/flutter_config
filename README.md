@@ -52,15 +52,22 @@ flutter_config.FlutterConfigPlugin.env(for: "ENV_API_KEY")
 
 ## Getting Started
 
-Install the latest version of the plugin
+1. Add `flutter_config` to your `pubspec.yaml` (or run `flutter pub add flutter_config`).
+2. Run the automated setup tool from your Flutter project root:
 
-Refer to [Android Setup Guide](./doc/ANDROID.md) for initial setup and advanced options
+```bash
+dart run flutter_config:setup
+```
 
-For iOS, `flutter_config` supports both **Swift Package Manager (SPM)** and **CocoaPods**.
-- **CocoaPods**: No additional setup is required.
-- **Swift Package Manager (Flutter 3.44+)**: No changes to `pubspec.yaml` needed! Refer to the [iOS Setup Guide](./doc/IOS.md) for initial setup and flavors configuration.
+*(You can also target specific platforms: `dart run flutter_config:setup --ios` or `dart run flutter_config:setup --android`)*
 
-For advanced usage (flavors, `Info.plist`), refer to the [iOS Setup Guide](./doc/IOS.md)
+This command automatically configures:
+- **iOS**: Creates `GeneratedDotEnv.plist` placeholder, registers it in `Runner.xcodeproj` (Copy Bundle Resources), injects `tmp.xcconfig` into `Debug`/`Release.xcconfig`, and configures Pre-actions in Xcode schemes.
+- **Android**: Applies `dotenv.gradle` in `android/app/build.gradle` and adds R8 `BuildConfig` keep rules to `proguard-rules.pro`.
+
+For manual setup and advanced configurations:
+- [iOS Setup Guide](./doc/IOS.md) (SPM, CocoaPods, Flavors, Info.plist)
+- [Android Setup Guide](./doc/ANDROID.md) (Flavors, Gradle, Proguard)
 
 ## Testing
 

@@ -2,7 +2,44 @@
 
 `flutter_config` supports both **Swift Package Manager (SPM)** (default in Flutter 3.44+) and **CocoaPods**.
 
-### Basic Usage with Swift Package Manager (SPM)
+### Automated Setup (Recommended)
+
+You can automatically configure your iOS project with a single command from your Flutter project root:
+
+```bash
+dart run flutter_config:setup --ios
+```
+
+*(You can also use `dart run flutter_config:setup ios` or `dart run flutter_config:setup` to configure both iOS and Android)*
+
+#### What the automated CLI does:
+1. **Creates placeholder plist**: Generates `ios/Flutter/GeneratedDotEnv.plist` so Xcode has a valid file reference immediately.
+2. **Updates build configurations**: Adds `#include? "tmp.xcconfig"` to `Debug.xcconfig` and `Release.xcconfig` (enabling `$(KEY)` in `Info.plist`).
+3. **Mocks into `project.pbxproj`**: Automatically adds `GeneratedDotEnv.plist` to **Copy Bundle Resources** without requiring Xcode GUI drag & drop.
+4. **Auto-detects Flavors & Generates Schemes**:
+   - Scans your project root for `.env.*` files (e.g., `.env.dev`, `.env.staging`, `.env.prod`).
+   - If an Xcode scheme for that flavor doesn't exist, the CLI **automatically creates the `<flavor>.xcscheme`** file in `ios/Runner.xcodeproj/xcshareddata/xcschemes/`!
+   - Configures the scheme's Pre-actions to bind to the matching `.env.<flavor>` file.
+5. **Migrates Legacy Scripts**:
+   - If your schemes already contain older/legacy `flutter_config` scripts (e.g. from CocoaPods), the CLI automatically detects and upgrades them to the latest Swift Package Manager (SPM) script while leaving non-`flutter_config` scripts intact.
+6. **Updates `.gitignore`**: Adds `**/ios/Flutter/tmp.xcconfig` to `.gitignore`.
+
+#### Running Flavors after setup:
+```bash
+# Default scheme (reads .env):
+flutter run
+
+# Flavor schemes (reads .env.dev, .env.staging, .env.prod):
+flutter run --flavor dev
+flutter run --flavor staging
+flutter run --flavor prod
+```
+
+---
+
+### Manual Setup with Swift Package Manager (SPM) (Alternative)
+
+If you prefer to configure Xcode manually:
 
 Under Swift Package Manager, variables are securely passed into the app bundle at build time using a binary property list (`GeneratedDotEnv.plist`), **without requiring any `.env` files in `pubspec.yaml` `assets:`**. This prevents exposing raw `.env` files or leaking cross-flavor secrets.
 
