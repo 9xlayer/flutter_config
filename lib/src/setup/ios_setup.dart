@@ -236,32 +236,34 @@ class IosSetup implements PlatformSetup {
       results.add('Created default Runner.xcscheme in xcshareddata/xcschemes');
     }
 
-    // Scan for .env.* files in projectDir to automatically generate missing flavor schemes
-    final envFiles = projectDir
-        .listSync()
-        .whereType<File>()
-        .where((f) {
-          final name = f.uri.pathSegments.last;
-          return name.startsWith('.env.') &&
-              !name.endsWith('.example') &&
-              !name.endsWith('.sample') &&
-              !name.endsWith('.bak');
-        })
-        .toList();
+    // Scan for .env.* files in projectDir (root + env/ subdir) to auto-generate missing flavor schemes
+    final envFiles = [
+      ...projectDir.listSync().whereType<File>(),
+      if (Directory('${projectDir.path}/env').existsSync())
+        ...Directory('${projectDir.path}/env').listSync().whereType<File>(),
+    ].where((f) {
+      final name = f.uri.pathSegments.last;
+      return name.startsWith('.env.') &&
+          !name.endsWith('.example') &&
+          !name.endsWith('.sample') &&
+          !name.endsWith('.bak');
+    }).toList();
 
-    for (final envFile in envFiles) {
+    // De-duplicate by flavor suffix (root takes priority over env/ subdir)
+    final seenFlavors = <String>{};
+    final uniqueEnvFiles = envFiles.where((f) {
+      final flavor = f.uri.pathSegments.last.substring(5); // strip '.env.'
+      return seenFlavors.add(flavor.toLowerCase());
+    }).toList();
+
+    for (final envFile in uniqueEnvFiles) {
       final envFileName = envFile.uri.pathSegments.last;
       final flavor = envFileName.substring(5); // e.g. "dev", "staging", "prod"
 
-      // Check if a scheme matching this flavor already exists
+      // Check if a scheme matching this flavor already exists (case-insensitive)
       final existingScheme = schemeFiles.any((f) {
         final name = f.uri.pathSegments.last.replaceAll('.xcscheme', '').toLowerCase();
-        final lowerFlavor = flavor.toLowerCase();
-        return name == lowerFlavor ||
-            (lowerFlavor == 'dev' && name == 'develop') ||
-            (lowerFlavor == 'develop' && name == 'dev') ||
-            (lowerFlavor == 'prod' && name == 'production') ||
-            (lowerFlavor == 'production' && name == 'prod');
+        return name == flavor.toLowerCase();
       });
 
       if (!existingScheme) {
