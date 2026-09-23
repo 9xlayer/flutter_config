@@ -303,27 +303,36 @@ class IosSetup implements PlatformSetup {
   String _injectPreActionIntoScheme(File schemeFile, String schemeName) {
     String content = schemeFile.readAsStringSync();
 
-    // Detect target env file for this scheme
+    // Detect target env file for this scheme.
+    // Checks both the project root and the 'env/' subdirectory (common Flutter pattern).
     String envTarget = '.env';
     final lowerName = schemeName.toLowerCase();
+
+    // Helper: check root first, then env/ subdir; return relative path from project root
+    String? _findEnvFile(String filename) {
+      if (File('${projectDir.path}/$filename').existsSync()) return filename;
+      if (File('${projectDir.path}/env/$filename').existsSync()) return 'env/$filename';
+      return null;
+    }
+
     if (lowerName == 'runner') {
-      envTarget = '.env';
-    } else if (File('${projectDir.path}/.env.$lowerName').existsSync()) {
-      envTarget = '.env.$lowerName';
-    } else if (lowerName == 'dev' && File('${projectDir.path}/.env.development').existsSync()) {
-      envTarget = '.env.development';
-    } else if ((lowerName == 'develop' || lowerName == 'development') && File('${projectDir.path}/.env.dev').existsSync()) {
-      envTarget = '.env.dev';
-    } else if (lowerName == 'prod' && File('${projectDir.path}/.env.production').existsSync()) {
-      envTarget = '.env.production';
-    } else if (lowerName == 'production' && File('${projectDir.path}/.env.prod').existsSync()) {
-      envTarget = '.env.prod';
-    } else if (lowerName.contains('dev') && File('${projectDir.path}/.env.dev').existsSync()) {
-      envTarget = '.env.dev';
-    } else if (lowerName.contains('stag') && File('${projectDir.path}/.env.staging').existsSync()) {
-      envTarget = '.env.staging';
-    } else if (lowerName.contains('prod') && File('${projectDir.path}/.env.prod').existsSync()) {
-      envTarget = '.env.prod';
+      envTarget = _findEnvFile('.env.dev') ?? _findEnvFile('.env') ?? '.env';
+    } else if (_findEnvFile('.env.$lowerName') != null) {
+      envTarget = _findEnvFile('.env.$lowerName')!;
+    } else if (lowerName == 'dev' && _findEnvFile('.env.development') != null) {
+      envTarget = _findEnvFile('.env.development')!;
+    } else if ((lowerName == 'develop' || lowerName == 'development') && _findEnvFile('.env.dev') != null) {
+      envTarget = _findEnvFile('.env.dev')!;
+    } else if (lowerName == 'prod' && _findEnvFile('.env.production') != null) {
+      envTarget = _findEnvFile('.env.production')!;
+    } else if (lowerName == 'production' && _findEnvFile('.env.prod') != null) {
+      envTarget = _findEnvFile('.env.prod')!;
+    } else if (lowerName.contains('dev') && _findEnvFile('.env.dev') != null) {
+      envTarget = _findEnvFile('.env.dev')!;
+    } else if (lowerName.contains('stag') && _findEnvFile('.env.staging') != null) {
+      envTarget = _findEnvFile('.env.staging')!;
+    } else if (lowerName.contains('prod') && _findEnvFile('.env.prod') != null) {
+      envTarget = _findEnvFile('.env.prod')!;
     }
 
     // Extract BuildableReference from existing scheme if available
