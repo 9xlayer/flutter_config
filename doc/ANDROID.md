@@ -27,26 +27,63 @@ dart run flutter_config:setup --android
 
 ### Manual Setup (Alternative)
 
-If you prefer to configure Android manually:
+If you prefer to configure Android manually instead of using `dart run flutter_config:setup --android`:
 
-1. In `android/app/build.gradle`:
-Right below `apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"`
-add the following line:
+#### 1. In `android/app/build.gradle.kts` (Kotlin DSL) or `build.gradle` (Groovy):
 
-```groovy
-apply from: project(':flutter_config').projectDir.getPath() + "/dotenv.gradle"
+**Kotlin DSL (`build.gradle.kts`):**
+```kotlin
+// If using flavors:
+project.extra["envConfigFiles"] = mapOf(
+    "dev" to "env/.env.dev",
+    "staging" to "env/.env.staging",
+    "prd" to "env/.env.prd"
+)
+
+apply(from = "${project(":flutter_config").projectDir}/dotenv.gradle")
+
+android {
+    namespace = "com.yourcompany.app"
+    buildFeatures.buildConfig = true // Required for AGP 8.0+
+
+    defaultConfig {
+        ...
+        resValue("string", "build_config_package", "com.yourcompany.app")
+    }
+}
 ```
 
-**Building a release version**
+**Groovy DSL (`build.gradle`):**
+```groovy
+// If using flavors:
+project.ext.envConfigFiles = [
+    dev: "env/.env.dev",
+    staging: "env/.env.staging",
+    prd: "env/.env.prd",
+]
 
-When building your apk for release, the R8 code shrinker obfuscates the `BuildConfig` class which holds all the env variables and thus causes all the env variables to be null. To prevent this, the following has to be done:
+apply from: project(':flutter_config').projectDir.getPath() + "/dotenv.gradle"
 
-1. Add file `android/app/proguard-rules.pro` to your app's project.
-2. Add the below line to the newly created `proguard-rules.pro` file:
-    ```
-    -keep class com.yourcompany.app.BuildConfig { *; }
-    ```
-    where `com.yourcompany.app` should be replaced with your app's package name.
+android {
+    namespace "com.yourcompany.app"
+    buildFeatures {
+        buildConfig true // Required for AGP 8.0+
+    }
+
+    defaultConfig {
+        ...
+        resValue "string", "build_config_package", "com.yourcompany.app"
+    }
+}
+```
+
+#### 2. Proguard / R8 Configuration
+In `android/app/proguard-rules.pro`, add:
+```proguard
+-keep class **.BuildConfig { *; }
+```
+
+---
 
 ## Usage in Java/Kotlin Code
 
@@ -54,14 +91,14 @@ Config variables set in `.env` are available to your Java or Kotlin classes via 
 
 ```kotlin
 fun getApiClient(): HttpURLConnection {
-    val url = URL(BuildConfig.API_URL);
+    val url = URL(BuildConfig.API_URL)
     // ...
 }
 ```
 
 ## Usage in Gradle
 
-You can read environment varibles from your Gradle configuration:
+You can read environment variables in your Gradle configuration:
 
 ```groovy
 defaultConfig {
@@ -69,81 +106,17 @@ defaultConfig {
 }
 ```
 
-## Usage in XML files
+## Usage in AndroidManifest.xml
 
-You can use env variables to configure libraries in `AndroidManifest.xml` and other xml files:
+You can use env variables to configure libraries in `AndroidManifest.xml`:
 
 ```xml
 <meta-data
-  android:name="com.google.android.geo.API_KEY"
-  android:value="@string/GOOGLE_MAPS_API_KEY" />
-```
-
-## Different environments
-
-Save config for different environments in different files: `.env.staging`, `.env.production`, etc.
-
-The same environment variable can be used to assemble releases with a different config:
-
-```
-$ cd android && ENVFILE=.env.staging ./gradlew assembleRelease
-```
-
-Alternatively, you can define a map in `build.gradle` associating builds with env files. Do it before the `apply from` call, and use build cases in lowercase, like:
-
-```
-project.ext.envConfigFiles = [
-    debug: ".env.development",
-    release: ".env.production",
-    anothercustombuild: ".env",
-]
-
-apply from: project(':flutter_config').projectDir.getPath() + "/dotenv.gradle"
-```
-
-## Different Package Names
-
-In `android/app/build.gradle`, if you use `applicationIdSuffix` or `applicationId` that is different from the package name indicated in `AndroidManifest.xml` in `<manifest package="...">` tag, for example, to support different build variants:
-Add this in `android/app/build.gradle`
-
-```
-defaultConfig {
-    ...
-    resValue "string", "build_config_package", "YOUR_PACKAGE_NAME_IN_ANDROIDMANIFEST.XML"
-}
+    android:name="com.google.android.geo.API_KEY"
+    android:value="@string/GOOGLE_MAPS_API_KEY" />
 ```
 
 ## Note
 
-All variables are strings, so you may need to cast them. For instance, in Gradle:
-
-```
-versionCode project.env.get("VERSION_CODE").toInteger()
-```
-
-Once again, remember variables stored in `.env` are published with your code, so **DO NOT put anything sensitive there like your app `signingConfigs`.**
-
-This plugin is written in Kotlin. Therefore, you need to make sure you have Kotlin support in your project your project. See [installing the Kotlin plugin](https://kotlinlang.org/docs/tutorials/kotlin-android.html#installing-the-kotlin-plugin).
-
-Edit your project-level build.gradle file to look like this:
-
-    buildscript {
-        ext.kotlin_version = '1.3.31'
-        ...
-        dependencies {
-            ...
-            classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-        }
-    }
-    ...
-
-Edit your app-level build.gradle file to look like this:
-
-    apply plugin: 'kotlin-android'
-    ...
-    dependencies {
-        implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-        ...
-    }
-
-You also need to make sure you are on the latest version of gradle
+- All variables are parsed as Strings. If you need integer types in Gradle, cast them via `.toInteger()`.
+- Variables stored in `.env` are packaged with your app, so **do not store sensitive secrets like release keystore passwords in `.env` files.**
