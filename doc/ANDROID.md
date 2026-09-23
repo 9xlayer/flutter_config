@@ -11,8 +11,17 @@ dart run flutter_config:setup --android
 *(You can also use `dart run flutter_config:setup android` or `dart run flutter_config:setup` to configure both iOS and Android)*
 
 #### What the automated CLI does:
-1. **App Gradle**: Automatically adds `apply from: project(':flutter_config').projectDir.getPath() + "/dotenv.gradle"` to `android/app/build.gradle`.
-2. **R8 / Proguard**: Automatically creates or updates `android/app/proguard-rules.pro` with `-keep class **.BuildConfig { *; }` to prevent env variables from being stripped or obfuscated during release builds.
+1. **Auto-detects Flavors & Maps `envConfigFiles`**:
+   - Scans project root and `env/` directory for `.env.*` files (e.g., `.env.dev`, `.env.staging`, `.env.prd`).
+   - Automatically generates the `envConfigFiles` mapping (`project.ext.envConfigFiles = [...]` in Groovy or `project.extra["envConfigFiles"] = mapOf(...)` in Kotlin DSL).
+2. **Applies `dotenv.gradle`**:
+   - Automatically adds `dotenv.gradle` right before the `android { ... }` block in `build.gradle` or `build.gradle.kts`.
+3. **Enables `buildConfig = true` (AGP 8.0+ Compatibility)**:
+   - Android Gradle Plugin 8+ disables `BuildConfig` generation by default. The CLI automatically adds `buildFeatures.buildConfig = true` inside `android { ... }`.
+4. **Configures `build_config_package`**:
+   - Detects the app's `namespace` and adds `resValue "string", "build_config_package", "$namespace"` to `defaultConfig` so `FlutterConfig` can find `BuildConfig` even when flavors use custom `applicationId`s.
+5. **R8 / Proguard**:
+   - Automatically creates or updates `android/app/proguard-rules.pro` with `-keep class **.BuildConfig { *; }` to prevent env variables from being stripped or obfuscated during release builds.
 
 ---
 
