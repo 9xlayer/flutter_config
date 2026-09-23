@@ -130,80 +130,143 @@ class IosSetup implements PlatformSetup {
 
     String content = pbxFile.readAsStringSync();
 
-    if (content.contains('GeneratedDotEnv.plist in Resources') ||
-        content.contains('GeneratedDotEnv.plist */ = {isa = PBXFileReference')) {
-      return 'project.pbxproj already contains GeneratedDotEnv.plist in Resources';
-    }
+    // 1. Locate the Runner native target's Resources build phase ID
+    String? runnerResourcesId;
+    final runnerTargetMatch = RegExp(
+      r'/\*\s*Runner\s*\*/\s*=\s*\{\s*isa\s*=\s*PBXNativeTarget;[\s\S]*?buildPhases\s*=\s*\(([\s\S]*?)\);',
+    ).firstMatch(content);
 
-    // Collect existing IDs to avoid any collisions
-    final idRegex = RegExp(r'\b[0-9A-F]{24}\b');
-    final existingIds = idRegex.allMatches(content).map((m) => m.group(0)!).toSet();
-
-    final buildFileId = _generatePbxId('FC01', existingIds);
-    final fileRefId = _generatePbxId('FC02', existingIds);
-
-    // 1. Add to PBXBuildFile
-    const buildFileHeader = '/* Begin PBXBuildFile section */';
-    final buildFileIndex = content.indexOf(buildFileHeader);
-    if (buildFileIndex != -1) {
-      final insertPos = buildFileIndex + buildFileHeader.length;
-      final newEntry = '\n\t\t$buildFileId /* GeneratedDotEnv.plist in Resources */ = {isa = PBXBuildFile; fileRef = $fileRefId /* GeneratedDotEnv.plist */; };';
-      content = content.substring(0, insertPos) + newEntry + content.substring(insertPos);
-    }
-
-    // 2. Add to PBXFileReference
-    const fileRefHeader = '/* Begin PBXFileReference section */';
-    final fileRefIndex = content.indexOf(fileRefHeader);
-    if (fileRefIndex != -1) {
-      final insertPos = fileRefIndex + fileRefHeader.length;
-      final newEntry = '\n\t\t$fileRefId /* GeneratedDotEnv.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = GeneratedDotEnv.plist; path = Flutter/GeneratedDotEnv.plist; sourceTree = "<group>"; };';
-      content = content.substring(0, insertPos) + newEntry + content.substring(insertPos);
-    }
-
-    // 3. Add fileRef to PBXGroup (Flutter group preferred)
-    final flutterGroupMatch = RegExp(r'(\/\*\s*Flutter\s*\*\/ = \{\s*isa = PBXGroup;\s*children = \()([\s\S]*?)(\);)')
-        .firstMatch(content);
-
-    if (flutterGroupMatch != null) {
-      final prefix = flutterGroupMatch.group(1)!;
-      final existingChildren = flutterGroupMatch.group(2)!;
-      final suffix = flutterGroupMatch.group(3)!;
-      final newChildren = '\n\t\t\t\t$fileRefId /* GeneratedDotEnv.plist */,$existingChildren';
-      content = content.replaceFirst(flutterGroupMatch.group(0)!, '$prefix$newChildren$suffix');
-    } else {
-      // Fallback: look for any group containing "Debug.xcconfig" or "Generated.xcconfig"
-      final genericGroupMatch = RegExp(r'(children = \(\s*(?:[^\)]*?Debug\.xcconfig[^\)]*?)\);)').firstMatch(content);
-      if (genericGroupMatch != null) {
-        final original = genericGroupMatch.group(0)!;
-        final updated = original.replaceFirst('children = (', 'children = (\n\t\t\t\t$fileRefId /* GeneratedDotEnv.plist */,');
-        content = content.replaceFirst(original, updated);
+    if (runnerTargetMatch != null) {
+      final phases = runnerTargetMatch.group(1)!;
+      final phaseMatch = RegExp(r'([0-9A-F]{24})\s*/\*\s*Resources\s*\*/').firstMatch(phases);
+      if (phaseMatch != null) {
+        runnerResourcesId = phaseMatch.group(1);
       }
     }
 
-    // 4. Add buildFile to PBXResourcesBuildPhase
-    final resourcesPhaseMatch = RegExp(r'(\/\*\s*Resources\s*\*\/ = \{\s*isa = PBXResourcesBuildPhase;[\s\S]*?files = \()([\s\S]*?)(\);)')
-        .firstMatch(content);
+    // Fallback: look for PBXResourcesBuildPhase containing AppFrameworkInfo.plist, LaunchScreen, or Main.storyboard
+    if (runnerResourcesId == null) {
+      final fallbackPhaseMatch = RegExp(
+        r'([0-9A-F]{24})\s*/\*\s*Resources\s*\*/\s*=\s*\{\s*isa\s*=\s*PBXResourcesBuildPhase;[\s\S]*?(?:AppFrameworkInfo\.plist|LaunchScreen|Main\.storyboard)[\s\S]*?files\s*=\s*\(',
+      ).firstMatch(content);
+      if (fallbackPhaseMatch != null) {
+        runnerResourcesId = fallbackPhaseMatch.group(1);
+      }
+    }
 
-    if (resourcesPhaseMatch != null) {
-      final prefix = resourcesPhaseMatch.group(1)!;
-      final existingFiles = resourcesPhaseMatch.group(2)!;
-      final suffix = resourcesPhaseMatch.group(3)!;
-      final newFiles = '\n\t\t\t\t$buildFileId /* GeneratedDotEnv.plist in Resources */,$existingFiles';
-      content = content.replaceFirst(resourcesPhaseMatch.group(0)!, '$prefix$newFiles$suffix');
-    } else {
-      // Fallback: any PBXResourcesBuildPhase
-      final genericResourceMatch = RegExp(r'(isa = PBXResourcesBuildPhase;[\s\S]*?files = \()([\s\S]*?)(\);)').firstMatch(content);
-      if (genericResourceMatch != null) {
-        final prefix = genericResourceMatch.group(1)!;
-        final existingFiles = genericResourceMatch.group(2)!;
-        final suffix = genericResourceMatch.group(3)!;
+    // Locate the Runner Resources build phase block in content
+    RegExpMatch? runnerResourcesPhaseMatch;
+    if (runnerResourcesId != null) {
+      runnerResourcesPhaseMatch = RegExp(
+        '($runnerResourcesId\\s*/\\*\\s*Resources\\s*\\*/\\s*=\\s*\\{\\s*isa\\s*=\\s*PBXResourcesBuildPhase;[\\s\\S]*?files\\s*=\\s*\\()([\\s\\S]*?)(\\);)',
+      ).firstMatch(content);
+    }
+    // Fallback: search for Resources phase with standard Flutter assets
+    runnerResourcesPhaseMatch ??= RegExp(
+      r'([0-9A-F]{24}\s*/\*\s*Resources\s*\*/\s*=\s*\{\s*isa\s*=\s*PBXResourcesBuildPhase;[\s\S]*?(?:AppFrameworkInfo\.plist|LaunchScreen|Main\.storyboard)[\s\S]*?files\s*=\s*\()([\s\S]*?)(\);)',
+    ).firstMatch(content);
+    // Last resort generic match
+    runnerResourcesPhaseMatch ??= RegExp(
+      r'(\/\*\s*Resources\s*\*\/ = \{\s*isa = PBXResourcesBuildPhase;[\s\S]*?files = \()([\s\S]*?)(\);)',
+    ).firstMatch(content);
+
+    if (runnerResourcesPhaseMatch == null) {
+      return 'Warning: Could not locate PBXResourcesBuildPhase in project.pbxproj';
+    }
+
+    // Check if the Runner Resources phase already contains GeneratedDotEnv.plist
+    final existingFilesInRunner = runnerResourcesPhaseMatch.group(2)!;
+    final alreadyInRunner = existingFilesInRunner.contains('GeneratedDotEnv.plist in Resources');
+
+    if (alreadyInRunner && content.contains('GeneratedDotEnv.plist */ = {isa = PBXFileReference')) {
+      return 'project.pbxproj already contains GeneratedDotEnv.plist in Runner Resources';
+    }
+
+    // Collect existing IDs to avoid collisions
+    final idRegex = RegExp(r'\b[0-9A-F]{24}\b');
+    final existingIds = idRegex.allMatches(content).map((m) => m.group(0)!).toSet();
+
+    // Check if fileRef or buildFile already exist
+    final fileRefMatch = RegExp(r'([0-9A-F]{24})\s*/\*\s*GeneratedDotEnv\.plist\s*\*/\s*=\s*\{isa\s*=\s*PBXFileReference').firstMatch(content);
+    final fileRefId = fileRefMatch?.group(1) ?? _generatePbxId('FC02', existingIds);
+
+    final buildFileMatch = RegExp(r'([0-9A-F]{24})\s*/\*\s*GeneratedDotEnv\.plist in Resources\s*\*/\s*=\s*\{isa\s*=\s*PBXBuildFile').firstMatch(content);
+    final buildFileId = buildFileMatch?.group(1) ?? _generatePbxId('FC01', existingIds);
+
+    // 1. Add to PBXBuildFile if not present
+    if (!content.contains('GeneratedDotEnv.plist in Resources */ = {isa = PBXBuildFile')) {
+      const buildFileHeader = '/* Begin PBXBuildFile section */';
+      final buildFileIndex = content.indexOf(buildFileHeader);
+      if (buildFileIndex != -1) {
+        final insertPos = buildFileIndex + buildFileHeader.length;
+        final newEntry = '\n\t\t$buildFileId /* GeneratedDotEnv.plist in Resources */ = {isa = PBXBuildFile; fileRef = $fileRefId /* GeneratedDotEnv.plist */; };';
+        content = content.substring(0, insertPos) + newEntry + content.substring(insertPos);
+      }
+    }
+
+    // 2. Add to PBXFileReference if not present
+    if (!content.contains('GeneratedDotEnv.plist */ = {isa = PBXFileReference')) {
+      const fileRefHeader = '/* Begin PBXFileReference section */';
+      final fileRefIndex = content.indexOf(fileRefHeader);
+      if (fileRefIndex != -1) {
+        final insertPos = fileRefIndex + fileRefHeader.length;
+        final newEntry = '\n\t\t$fileRefId /* GeneratedDotEnv.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = GeneratedDotEnv.plist; path = Flutter/GeneratedDotEnv.plist; sourceTree = "<group>"; };';
+        content = content.substring(0, insertPos) + newEntry + content.substring(insertPos);
+      }
+    }
+
+    // 3. Add fileRef to PBXGroup (Flutter group preferred) if not present
+    if (!content.contains('$fileRefId /* GeneratedDotEnv.plist */,')) {
+      final flutterGroupMatch = RegExp(r'(\/\*\s*Flutter\s*\*\/ = \{\s*isa = PBXGroup;\s*children = \()([\s\S]*?)(\);)')
+          .firstMatch(content);
+
+      if (flutterGroupMatch != null) {
+        final prefix = flutterGroupMatch.group(1)!;
+        final existingChildren = flutterGroupMatch.group(2)!;
+        final suffix = flutterGroupMatch.group(3)!;
+        final newChildren = '\n\t\t\t\t$fileRefId /* GeneratedDotEnv.plist */,$existingChildren';
+        content = content.replaceFirst(flutterGroupMatch.group(0)!, '$prefix$newChildren$suffix');
+      } else {
+        final genericGroupMatch = RegExp(r'(children = \(\s*(?:[^\)]*?Debug\.xcconfig[^\)]*?)\);)').firstMatch(content);
+        if (genericGroupMatch != null) {
+          final original = genericGroupMatch.group(0)!;
+          final updated = original.replaceFirst('children = (', 'children = (\n\t\t\t\t$fileRefId /* GeneratedDotEnv.plist */,');
+          content = content.replaceFirst(original, updated);
+        }
+      }
+    }
+
+    // 4. Remove GeneratedDotEnv.plist from any wrong resources build phase (e.g. RunnerTests)
+    if (!alreadyInRunner && content.contains('GeneratedDotEnv.plist in Resources')) {
+      final wrongPhaseEntry = RegExp(r'\n?\t+[0-9A-F]{24}\s*/\*\s*GeneratedDotEnv\.plist in Resources\s*\*/,');
+      content = content.replaceFirst(wrongPhaseEntry, '');
+    }
+
+    // 5. Add buildFile to the Runner target PBXResourcesBuildPhase
+    if (!alreadyInRunner) {
+      if (runnerResourcesId != null) {
+        runnerResourcesPhaseMatch = RegExp(
+          '($runnerResourcesId\\s*/\\*\\s*Resources\\s*\\*/\\s*=\\s*\\{\\s*isa\\s*=\\s*PBXResourcesBuildPhase;[\\s\\S]*?files\\s*=\\s*\\()([\\s\\S]*?)(\\);)',
+        ).firstMatch(content);
+      }
+      runnerResourcesPhaseMatch ??= RegExp(
+        r'([0-9A-F]{24}\s*/\*\s*Resources\s*\*/\s*=\s*\{\s*isa\s*=\s*PBXResourcesBuildPhase;[\s\S]*?(?:AppFrameworkInfo\.plist|LaunchScreen|Main\.storyboard)[\s\S]*?files\s*=\s*\()([\s\S]*?)(\);)',
+      ).firstMatch(content);
+      runnerResourcesPhaseMatch ??= RegExp(
+        r'(\/\*\s*Resources\s*\*\/ = \{\s*isa = PBXResourcesBuildPhase;[\s\S]*?files = \()([\s\S]*?)(\);)',
+      ).firstMatch(content);
+
+      if (runnerResourcesPhaseMatch != null) {
+        final prefix = runnerResourcesPhaseMatch.group(1)!;
+        final existingFiles = runnerResourcesPhaseMatch.group(2)!;
+        final suffix = runnerResourcesPhaseMatch.group(3)!;
         final newFiles = '\n\t\t\t\t$buildFileId /* GeneratedDotEnv.plist in Resources */,$existingFiles';
-        content = content.replaceFirst(genericResourceMatch.group(0)!, '$prefix$newFiles$suffix');
+        content = content.replaceFirst(runnerResourcesPhaseMatch.group(0)!, '$prefix$newFiles$suffix');
       }
     }
 
     pbxFile.writeAsStringSync(content);
-    return 'Added GeneratedDotEnv.plist to Runner.xcodeproj (Copy Bundle Resources)';
+    return 'Added GeneratedDotEnv.plist to Runner target Resources in project.pbxproj';
   }
 
   /// Step 4: Configure Pre-actions for Xcode schemes

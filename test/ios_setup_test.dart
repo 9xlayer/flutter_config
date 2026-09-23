@@ -267,4 +267,84 @@ APP_NAME=My Test App
     expect(updatedInfoPlist, contains('<string>\$(APP_NAME)</string>'));
     expect(updatedInfoPlist, contains('<string>\$(PRODUCT_BUNDLE_IDENTIFIER)</string>'));
   });
+
+  test('IosSetup injects GeneratedDotEnv.plist into Runner target Resources, not RunnerTests', () {
+    // Construct pbxproj with both RunnerTests and Runner resources build phases
+    // RunnerTests appears FIRST (like in real Xcode projects)
+    const multiTargetPbxproj = '''// !\$*UTF8*\$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+/* Begin PBXNativeTarget section */
+		331C8080294A63A400263BE5 /* RunnerTests */ = {
+			isa = PBXNativeTarget;
+			buildPhases = (
+				331C807F294A63A400263BE5 /* Resources */,
+			);
+			name = RunnerTests;
+		};
+		97C146ED1CF9000F007C117D /* Runner */ = {
+			isa = PBXNativeTarget;
+			buildPhases = (
+				97C146EC1CF9000F007C117D /* Resources */,
+			);
+			name = Runner;
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXGroup section */
+		9740EEB11CF90186004384FC /* Flutter */ = {
+			isa = PBXGroup;
+			children = (
+				9740EEB21CF90195004384FC /* Debug.xcconfig */,
+			);
+			name = Flutter;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXResourcesBuildPhase section */
+		331C807F294A63A400263BE5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		97C146EC1CF9000F007C117D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+	};
+	rootObject = 97C146E61CF9000F007C117D /* Project object */;
+}
+''';
+
+    File('${tempDir.path}/ios/Runner.xcodeproj/project.pbxproj').writeAsStringSync(multiTargetPbxproj);
+
+    final setup = IosSetup(tempDir);
+    final result = setup.run();
+
+    expect(result.success, isTrue);
+
+    final updatedPbx = File('${tempDir.path}/ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+
+    // Verify RunnerTests resources phase does NOT contain GeneratedDotEnv.plist
+    final runnerTestsPhase = RegExp(r'331C807F294A63A400263BE5 /\* Resources \*/ = \{[\s\S]*?\};')
+        .firstMatch(updatedPbx)!.group(0)!;
+    expect(runnerTestsPhase, isNot(contains('GeneratedDotEnv.plist in Resources')));
+
+    // Verify Runner resources phase DOES contain GeneratedDotEnv.plist
+    final runnerPhase = RegExp(r'97C146EC1CF9000F007C117D /\* Resources \*/ = \{[\s\S]*?\};')
+        .firstMatch(updatedPbx)!.group(0)!;
+    expect(runnerPhase, contains('GeneratedDotEnv.plist in Resources'));
+  });
 }
