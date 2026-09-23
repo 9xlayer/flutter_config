@@ -47,11 +47,19 @@ class IosSetup implements PlatformSetup {
       final pbxResult = _injectPbxproj();
       messages.add(pbxResult);
 
-      // 4. Configure Pre-actions in Xcode schemes
+      // 4. Update PRODUCT_BUNDLE_IDENTIFIER and DEVELOPMENT_TEAM in project.pbxproj
+      final buildSettingsResults = _updatePbxprojBuildSettings();
+      messages.addAll(buildSettingsResults);
+
+      // 5. Ensure Info.plist uses xcconfig variables for display name and bundle ID
+      final infoPlistResults = _updateInfoPlist();
+      messages.addAll(infoPlistResults);
+
+      // 6. Configure Pre-actions in Xcode schemes
       final schemeResults = _configureSchemes();
       messages.addAll(schemeResults);
 
-      // 5. Update .gitignore
+      // 7. Update .gitignore
       final gitignoreResult = _updateGitignore();
       if (gitignoreResult != null) {
         messages.add(gitignoreResult);
@@ -443,7 +451,176 @@ class IosSetup implements PlatformSetup {
     return 'configured';
   }
 
-  /// Step 5: Update .gitignore
+  /// Step 4: Update PRODUCT_BUNDLE_IDENTIFIER and DEVELOPMENT_TEAM in project.pbxproj
+  /// to use xcconfig variable references instead of hardcoded values.
+  /// Idempotent: skips any entry that already uses a ${VAR} reference.
+  List<String> _updatePbxprojBuildSettings() {
+    final results = <String>[];
+    final pbxFile = File('${iosDir.path}/Runner.xcodeproj/project.pbxproj');
+    if (!pbxFile.existsSync()) return results;
+
+    // Detect which env keys are actually present in env files
+    final envKeys = _scanEnvKeys();
+    final bundleIdKey = _findKey(envKeys, ['BUNDLE_ID', 'APP_BUNDLE_ID', 'BUNDLE_IDENTIFIER']);
+    final teamIdKey = _findKey(envKeys, ['APPLE_TEAM_ID', 'TEAM_ID', 'DEVELOPMENT_TEAM_ID']);
+
+    if (bundleIdKey == null && teamIdKey == null) {
+      results.add('No BUNDLE_ID or APPLE_TEAM_ID found in env files — skipping pbxproj build settings update');
+      return results;
+    }
+
+    String content = pbxFile.readAsStringSync();
+    bool modified = false;
+
+    // Replace PRODUCT_BUNDLE_IDENTIFIER for Runner target (not RunnerTests)
+    if (bundleIdKey != null) {
+      // Match entries that are NOT already using a variable (no ${ or $( prefix)
+      final bundlePattern = RegExp(
+        r'(PRODUCT_BUNDLE_IDENTIFIER = )"([^"$][^"]*)"(;)',
+      );
+      final updated = content.replaceAllMapped(bundlePattern, (m) {
+        final value = m.group(2)!;
+        // Skip RunnerTests entries (they use a suffix pattern we preserve)
+        if (value.contains('RunnerTests')) return m.group(0)!;
+        return '${m.group(1)}"\${$bundleIdKey}"${m.group(3)}';
+      });
+      if (updated != content) {
+        content = updated;
+        modified = true;
+        results.add('Updated PRODUCT_BUNDLE_IDENTIFIER to "\${$bundleIdKey}" in project.pbxproj');
+      } else {
+        results.add('PRODUCT_BUNDLE_IDENTIFIER already uses a variable — skipped');
+      }
+    }
+
+    // Replace DEVELOPMENT_TEAM (non-conditional, non-sdk-specific entries)
+    if (teamIdKey != null) {
+      // Only replace bare DEVELOPMENT_TEAM = "..."; (not the [sdk=iphoneos*] conditional)
+      final teamPattern = RegExp(
+        r'(\t+DEVELOPMENT_TEAM = )"([^"]*)"(;)',
+      );
+      final updated = content.replaceAllMapped(teamPattern, (m) {
+        final value = m.group(2)!;
+        // Skip if already a variable
+        if (value.startsWith(r'${') || value.startsWith(r'$(')) return m.group(0)!;
+        return '${m.group(1)}"\${$teamIdKey}"${m.group(3)}';
+      });
+      if (updated != content) {
+        content = updated;
+        modified = true;
+        results.add('Updated DEVELOPMENT_TEAM to "\${$teamIdKey}" in project.pbxproj');
+      } else {
+        results.add('DEVELOPMENT_TEAM already uses a variable — skipped');
+      }
+    }
+
+    if (modified) pbxFile.writeAsStringSync(content);
+    return results;
+  }
+
+  /// Step 5: Ensure Info.plist uses xcconfig variable references for
+  /// CFBundleDisplayName and CFBundleIdentifier.
+  List<String> _updateInfoPlist() {
+    final results = <String>[];
+    final infoPlist = File('${iosDir.path}/Runner/Info.plist');
+    if (!infoPlist.existsSync()) return results;
+
+    final envKeys = _scanEnvKeys();
+    final appNameKey = _findKey(envKeys, ['APP_NAME', 'APP_DISPLAY_NAME', 'APPLICATION_NAME']);
+
+    String content = infoPlist.readAsStringSync();
+    bool modified = false;
+
+    // Ensure CFBundleDisplayName exists and uses the app name key
+    if (appNameKey != null) {
+      if (!content.contains('CFBundleDisplayName')) {
+        // Insert after CFBundleDevelopmentRegion or after <dict>
+        final insertAfter = content.contains('CFBundleDevelopmentRegion')
+            ? RegExp(r'(<key>CFBundleDevelopmentRegion<\/key>\s*<string>[^<]*<\/string>)')
+            : RegExp(r'(<dict>)');
+        final match = insertAfter.firstMatch(content);
+        if (match != null) {
+          final insertion =
+              '\n\t\t<key>CFBundleDisplayName</key>\n\t\t<string>\$($appNameKey)</string>';
+          content = content.replaceFirst(match.group(0)!, '${match.group(0)!}$insertion');
+          modified = true;
+          results.add('Added CFBundleDisplayName = \$($appNameKey) to Info.plist');
+        }
+      } else if (!content.contains('CFBundleDisplayName</key>\n\t\t<string>\$(')) {
+        // Update existing CFBundleDisplayName if it's hardcoded
+        final displayNamePattern = RegExp(
+          r'(<key>CFBundleDisplayName<\/key>\s*<string>)([^$<][^<]*?)(<\/string>)',
+        );
+        final updated = content.replaceFirstMapped(displayNamePattern, (m) {
+          return '${m.group(1)}\$($appNameKey)${m.group(3)}';
+        });
+        if (updated != content) {
+          content = updated;
+          modified = true;
+          results.add('Updated CFBundleDisplayName to \$($appNameKey) in Info.plist');
+        } else {
+          results.add('CFBundleDisplayName already uses a variable — skipped');
+        }
+      } else {
+        results.add('CFBundleDisplayName already configured in Info.plist');
+      }
+    }
+
+    // Ensure CFBundleIdentifier uses PRODUCT_BUNDLE_IDENTIFIER (standard Flutter pattern)
+    if (!content.contains('PRODUCT_BUNDLE_IDENTIFIER')) {
+      final idPattern = RegExp(
+        r'(<key>CFBundleIdentifier<\/key>\s*<string>)([^<]*)(<\/string>)',
+      );
+      final updated = content.replaceFirstMapped(idPattern, (m) {
+        final val = m.group(2)!;
+        if (val.startsWith(r'$(')) return m.group(0)!; // already a variable
+        return '${m.group(1)}\$(PRODUCT_BUNDLE_IDENTIFIER)${m.group(3)}';
+      });
+      if (updated != content) {
+        content = updated;
+        modified = true;
+        results.add('Updated CFBundleIdentifier to \$(PRODUCT_BUNDLE_IDENTIFIER) in Info.plist');
+      }
+    } else {
+      results.add('CFBundleIdentifier already uses PRODUCT_BUNDLE_IDENTIFIER');
+    }
+
+    if (modified) infoPlist.writeAsStringSync(content);
+    return results;
+  }
+
+  /// Scans all .env.* files in project root and env/ subdirectory,
+  /// returns the union of all key names defined across all files.
+  Set<String> _scanEnvKeys() {
+    final keys = <String>{};
+    final envPattern = RegExp(r'^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=', multiLine: true);
+    for (final dir in [projectDir, Directory('${projectDir.path}/env')]) {
+      if (!dir.existsSync()) continue;
+      for (final file in dir.listSync().whereType<File>()) {
+        final name = file.uri.pathSegments.last;
+        if (!name.startsWith('.env') || name.endsWith('.example') || name.endsWith('.sample')) {
+          continue;
+        }
+        try {
+          final raw = file.readAsStringSync();
+          for (final m in envPattern.allMatches(raw)) {
+            keys.add(m.group(1)!);
+          }
+        } catch (_) {}
+      }
+    }
+    return keys;
+  }
+
+  /// Returns the first key from [candidates] that exists in [envKeys], or null.
+  String? _findKey(Set<String> envKeys, List<String> candidates) {
+    for (final k in candidates) {
+      if (envKeys.contains(k)) return k;
+    }
+    return null;
+  }
+
+  /// Step 5 (gitignore): Update .gitignore
   String? _updateGitignore() {
     final gitignoreFile = File('${projectDir.path}/.gitignore');
     if (gitignoreFile.existsSync()) {
