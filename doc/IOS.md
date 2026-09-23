@@ -34,6 +34,15 @@ Under Swift Package Manager, variables are securely passed into the app bundle a
 
 ---
 
+### Usage with CocoaPods (Legacy / Existing Projects)
+
+If your iOS project is still using CocoaPods:
+- **No additional setup is required** if you only read environment variables from Dart or native Obj-C/Swift code.
+- CocoaPods automatically executes the plugin's code generation (`s.script_phase`) during build to compile variables directly into machine code.
+- If you also need variables available inside `Info.plist`, see the section below.
+
+---
+
 ### Reading Variables in Native Code
 
 **Objective-C:**
