@@ -1,7 +1,8 @@
 ## 2.1.0
 
 - Added support for Swift Package Manager (SPM) on iOS while retaining CocoaPods compatibility.
-- Added runtime bundle fallback for loading `.env` in SwiftPM environments.
+- Added build-time plist generator `BuildDotenvPlist.rb` and dual-mode injection for iOS.
+- Bumped Dart SDK requirement to `^3.0.0` and Flutter to `>=3.10.0`.
 
 ## 2.0.2
 
