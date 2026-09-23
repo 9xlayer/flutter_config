@@ -100,7 +100,7 @@ static NSDictionary *_cachedEnv = nil;
     }
 
     if (targetPath == nil) {
-        NSLog(@"[FlutterConfig] Warning: Could not locate '%@' in app bundle. If using Swift Package Manager, add '%@' to pubspec.yaml assets or Xcode Copy Bundle Resources.", envFileName, envFileName);
+        NSLog(@"[FlutterConfig] Warning: Could not locate GeneratedDotEnv.plist or '%@' in app bundle. If using Swift Package Manager, ensure GeneratedDotEnv.plist is generated in Xcode Pre-actions and added to Copy Bundle Resources.", envFileName);
         return @{};
     }
 

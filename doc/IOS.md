@@ -18,12 +18,14 @@ Under Swift Package Manager, variables are securely passed into the app bundle a
    
    # 1. Generate tmp.xcconfig for Info.plist & Build Settings
    SCRIPT_XC="${SRCROOT}/.symlinks/plugins/flutter_config/ios/Classes/BuildXCConfig.rb"
+   if [ ! -f "$SCRIPT_XC" ]; then SCRIPT_XC="${SRCROOT}/Flutter/ephemeral/Packages/.packages/flutter_config/Sources/flutter_config/BuildXCConfig.rb"; fi
    if [ ! -f "$SCRIPT_XC" ]; then SCRIPT_XC=$(find "$BUILD_DIR/../../SourcePackages" -name "BuildXCConfig.rb" 2>/dev/null | head -n 1); fi
    if [ ! -f "$SCRIPT_XC" ]; then SCRIPT_XC="${SRCROOT}/../../ios/Classes/BuildXCConfig.rb"; fi
    if [ -f "$SCRIPT_XC" ]; then ruby "$SCRIPT_XC" "${SRCROOT}/" "${SRCROOT}/Flutter/tmp.xcconfig"; fi
 
    # 2. Generate GeneratedDotEnv.plist for SwiftPM Native & Dart
    SCRIPT_PLIST="${SRCROOT}/.symlinks/plugins/flutter_config/ios/Classes/BuildDotenvPlist.rb"
+   if [ ! -f "$SCRIPT_PLIST" ]; then SCRIPT_PLIST="${SRCROOT}/Flutter/ephemeral/Packages/.packages/flutter_config/Sources/flutter_config/BuildDotenvPlist.rb"; fi
    if [ ! -f "$SCRIPT_PLIST" ]; then SCRIPT_PLIST=$(find "$BUILD_DIR/../../SourcePackages" -name "BuildDotenvPlist.rb" 2>/dev/null | head -n 1); fi
    if [ ! -f "$SCRIPT_PLIST" ]; then SCRIPT_PLIST="${SRCROOT}/../../ios/Classes/BuildDotenvPlist.rb"; fi
    if [ -f "$SCRIPT_PLIST" ]; then ruby "$SCRIPT_PLIST" "${SRCROOT}/" "${SRCROOT}/Flutter/GeneratedDotEnv.plist"; fi
