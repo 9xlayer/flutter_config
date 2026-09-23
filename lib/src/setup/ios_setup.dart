@@ -303,36 +303,51 @@ class IosSetup implements PlatformSetup {
   String _injectPreActionIntoScheme(File schemeFile, String schemeName) {
     String content = schemeFile.readAsStringSync();
 
-    // Detect target env file for this scheme.
-    // Checks both the project root and the 'env/' subdirectory (common Flutter pattern).
+    // Detect target env file for this scheme dynamically.
+    // Scans actual env files in the project root and 'env/' subdirectory,
+    // then picks the best match based on the scheme name.
     String envTarget = '.env';
     final lowerName = schemeName.toLowerCase();
 
-    // Helper: check root first, then env/ subdir; return relative path from project root
-    String? _findEnvFile(String filename) {
-      if (File('${projectDir.path}/$filename').existsSync()) return filename;
-      if (File('${projectDir.path}/env/$filename').existsSync()) return 'env/$filename';
-      return null;
+    // Collect all .env.* files from root and env/ subdir with their relative paths
+    final candidates = <String, String>{}; // suffix → relative path
+    for (final searchDir in [
+      projectDir,
+      Directory('${projectDir.path}/env'),
+    ]) {
+      if (!searchDir.existsSync()) continue;
+      for (final entity in searchDir.listSync().whereType<File>()) {
+        final name = entity.uri.pathSegments.last;
+        // Match .env.xxx or .env (plain)
+        final match = RegExp(r'^\.env(\.[\w-]+)?$').firstMatch(name);
+        if (match == null) continue;
+        final suffix = (match.group(1) ?? '').replaceFirst('.', ''); // e.g. 'dev', 'prd', ''
+        final relative = searchDir.path == projectDir.path
+            ? name
+            : 'env/$name';
+        candidates[suffix] = relative;
+      }
     }
 
+    // Priority: exact match on suffix, then partial/fuzzy match
     if (lowerName == 'runner') {
-      envTarget = _findEnvFile('.env.dev') ?? _findEnvFile('.env') ?? '.env';
-    } else if (_findEnvFile('.env.$lowerName') != null) {
-      envTarget = _findEnvFile('.env.$lowerName')!;
-    } else if (lowerName == 'dev' && _findEnvFile('.env.development') != null) {
-      envTarget = _findEnvFile('.env.development')!;
-    } else if ((lowerName == 'develop' || lowerName == 'development') && _findEnvFile('.env.dev') != null) {
-      envTarget = _findEnvFile('.env.dev')!;
-    } else if (lowerName == 'prod' && _findEnvFile('.env.production') != null) {
-      envTarget = _findEnvFile('.env.production')!;
-    } else if (lowerName == 'production' && _findEnvFile('.env.prod') != null) {
-      envTarget = _findEnvFile('.env.prod')!;
-    } else if (lowerName.contains('dev') && _findEnvFile('.env.dev') != null) {
-      envTarget = _findEnvFile('.env.dev')!;
-    } else if (lowerName.contains('stag') && _findEnvFile('.env.staging') != null) {
-      envTarget = _findEnvFile('.env.staging')!;
-    } else if (lowerName.contains('prod') && _findEnvFile('.env.prod') != null) {
-      envTarget = _findEnvFile('.env.prod')!;
+      // Runner scheme uses the dev env as default
+      envTarget = candidates['dev'] ?? candidates['development'] ?? candidates[''] ?? '.env';
+    } else if (candidates.containsKey(lowerName)) {
+      // Exact match: scheme 'dev' → suffix 'dev'
+      envTarget = candidates[lowerName]!;
+    } else {
+      // Fuzzy: find a suffix that is a substring of the scheme name or vice versa
+      final fuzzy = candidates.entries.where((e) =>
+          e.key.isNotEmpty &&
+          (lowerName.contains(e.key) || e.key.contains(lowerName)),
+      );
+      if (fuzzy.isNotEmpty) {
+        // Prefer the longest (most specific) match
+        envTarget = fuzzy.reduce((a, b) => a.key.length >= b.key.length ? a : b).value;
+      } else {
+        envTarget = candidates[''] ?? '.env'; // fall back to plain .env
+      }
     }
 
     // Extract BuildableReference from existing scheme if available
