@@ -116,7 +116,14 @@ You can use env variables to configure libraries in `AndroidManifest.xml`:
     android:value="@string/GOOGLE_MAPS_API_KEY" />
 ```
 
-## Note
+## Kotlin Compatibility (Flutter 3.47+ & Legacy KGP)
 
-- All variables are parsed as Strings. If you need integer types in Gradle, cast them via `.toInteger()`.
-- Variables stored in `.env` are packaged with your app, so **do not store sensitive secrets like release keystore passwords in `.env` files.**
+`flutter_config` defaults to **Built-in Kotlin** (`android.builtInKotlin=true`) to be ready for **Flutter 3.47+** and **Android Gradle Plugin 9.0+**.
+
+- **Modern Flutter (3.47+ / AGP 9.0+)**: No extra configuration needed. Built-in Kotlin is active by default.
+- **Legacy Flutter Projects (using KGP / AGP < 9.0)**: Ensure your `android/gradle.properties` contains:
+  ```properties
+  android.builtInKotlin=false
+  ```
+  `flutter_config` will automatically detect this flag and fall back to the legacy `kotlin-android` plugin.
+
