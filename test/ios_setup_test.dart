@@ -212,4 +212,59 @@ void main() {
     expect(updatedScheme, contains('BuildDotenvPlist.rb'));
     expect(updatedScheme, contains('GeneratedDotEnv.plist'));
   });
+
+  test('IosSetup auto-configures BUNDLE_ID, DEVELOPMENT_TEAM in pbxproj and Info.plist', () {
+    // Create env file with bundle id, team id, and app name
+    Directory('${tempDir.path}/env').createSync();
+    File('${tempDir.path}/env/.env.dev').writeAsStringSync('''
+BUNDLE_ID=com.example.testapp
+APPLE_TEAM_ID=XYZ9876543
+APP_NAME=My Test App
+''');
+
+    // Create mock Info.plist
+    Directory('${tempDir.path}/ios/Runner').createSync(recursive: true);
+    File('${tempDir.path}/ios/Runner/Info.plist').writeAsStringSync('''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>\$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.hardcoded.id</string>
+</dict>
+</plist>
+''');
+
+    // Update mock pbxproj with hardcoded bundle id and team id
+    final currentPbx = File('${tempDir.path}/ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+    final pbxWithSettings = currentPbx.replaceFirst(
+      '/* End PBXResourcesBuildPhase section */',
+      '''/* End PBXResourcesBuildPhase section */
+		97C147031CF9000F007C117D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				DEVELOPMENT_TEAM = "OLD_TEAM_ID";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.old.bundle";
+			};
+		};''',
+    );
+    File('${tempDir.path}/ios/Runner.xcodeproj/project.pbxproj').writeAsStringSync(pbxWithSettings);
+
+    final setup = IosSetup(tempDir);
+    final result = setup.run();
+
+    expect(result.success, isTrue);
+
+    // Verify pbxproj was updated to variable references
+    final updatedPbx = File('${tempDir.path}/ios/Runner.xcodeproj/project.pbxproj').readAsStringSync();
+    expect(updatedPbx, contains('PRODUCT_BUNDLE_IDENTIFIER = "\${BUNDLE_ID}";'));
+    expect(updatedPbx, contains('DEVELOPMENT_TEAM = "\${APPLE_TEAM_ID}";'));
+
+    // Verify Info.plist was updated
+    final updatedInfoPlist = File('${tempDir.path}/ios/Runner/Info.plist').readAsStringSync();
+    expect(updatedInfoPlist, contains('<key>CFBundleDisplayName</key>'));
+    expect(updatedInfoPlist, contains('<string>\$(APP_NAME)</string>'));
+    expect(updatedInfoPlist, contains('<string>\$(PRODUCT_BUNDLE_IDENTIFIER)</string>'));
+  });
 }

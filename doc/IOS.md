@@ -16,13 +16,21 @@ dart run flutter_config:setup --ios
 1. **Creates placeholder plist**: Generates `ios/Flutter/GeneratedDotEnv.plist` so Xcode has a valid file reference immediately.
 2. **Updates build configurations**: Adds `#include? "tmp.xcconfig"` to `Debug.xcconfig` and `Release.xcconfig` (enabling `$(KEY)` in `Info.plist`).
 3. **Mocks into `project.pbxproj`**: Automatically adds `GeneratedDotEnv.plist` to **Copy Bundle Resources** without requiring Xcode GUI drag & drop.
-4. **Auto-detects Flavors & Generates Schemes**:
-   - Scans your project root for `.env.*` files (e.g., `.env.dev`, `.env.staging`, `.env.prod`).
+4. **Auto-configures Xcode Build Settings (`project.pbxproj`)**:
+   - Detects `BUNDLE_ID` and `APPLE_TEAM_ID` from your `.env.*` files.
+   - Automatically replaces hardcoded `PRODUCT_BUNDLE_IDENTIFIER` with `"${BUNDLE_ID}"`.
+   - Automatically replaces hardcoded `DEVELOPMENT_TEAM` with `"${APPLE_TEAM_ID}"`.
+   - Fully idempotent: leaves existing variable references intact.
+5. **Configures `Info.plist`**:
+   - Detects app name keys (`APP_NAME`, `APP_DISPLAY_NAME`) from env files and ensures `CFBundleDisplayName = $(APP_NAME)`.
+   - Ensures `CFBundleIdentifier` uses `$(PRODUCT_BUNDLE_IDENTIFIER)`.
+6. **Auto-detects Flavors & Generates Schemes**:
+   - Scans your project root and `env/` subdirectory for `.env.*` files (e.g., `.env.dev`, `.env.staging`, `.env.prod`).
    - If an Xcode scheme for that flavor doesn't exist, the CLI **automatically creates the `<flavor>.xcscheme`** file in `ios/Runner.xcodeproj/xcshareddata/xcschemes/`!
    - Configures the scheme's Pre-actions to bind to the matching `.env.<flavor>` file.
-5. **Migrates Legacy Scripts**:
+7. **Migrates Legacy Scripts**:
    - If your schemes already contain older/legacy `flutter_config` scripts (e.g. from CocoaPods), the CLI automatically detects and upgrades them to the latest Swift Package Manager (SPM) script while leaving non-`flutter_config` scripts intact.
-6. **Updates `.gitignore`**: Adds `**/ios/Flutter/tmp.xcconfig` to `.gitignore`.
+8. **Updates `.gitignore`**: Adds `**/ios/Flutter/tmp.xcconfig` to `.gitignore`.
 
 #### Running Flavors after setup:
 ```bash
