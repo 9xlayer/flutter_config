@@ -1,3 +1,8 @@
+## 2.1.0
+
+- Added support for Swift Package Manager (SPM) on iOS while retaining CocoaPods compatibility.
+- Added runtime bundle fallback for loading `.env` in SwiftPM environments.
+
 ## 2.0.2
 
 - Update deprecated Ruby code in iOS script.

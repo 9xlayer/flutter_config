@@ -9,6 +9,22 @@
          <ExecutionAction
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
+               title = "Run Prepare Flutter Framework Script"
+               scriptText = "exec &gt; ${PROJECT_DIR}/prepare.log 2&gt;&amp;1;&#10;/bin/sh &quot;$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh&quot; prepare&#10;">
+               <EnvironmentBuildable>
+                  <BuildableReference
+                     BuildableIdentifier = "primary"
+                     BlueprintIdentifier = "97C146ED1CF9000F007C117D"
+                     BuildableName = "Runner.app"
+                     BlueprintName = "Runner"
+                     ReferencedContainer = "container:Runner.xcodeproj">
+                  </BuildableReference>
+               </EnvironmentBuildable>
+            </ActionContent>
+         </ExecutionAction>
+         <ExecutionAction
+            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
+            <ActionContent
                title = "Run Script"
                scriptText = "echo &quot;.env.dev&quot; &gt; ${SRCROOT}/.envfile&#10;">
                <EnvironmentBuildable>
@@ -26,7 +42,7 @@
             ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
             <ActionContent
                title = "Run Script"
-               scriptText = "exec &gt; ${PROJECT_DIR}/prebuild.log 2&gt;&amp;1;&#10;${SRCROOT}/.symlinks/plugins/flutter_config/ios/Classes/BuildXCConfig.rb ${SRCROOT}/ ${SRCROOT}/Flutter/tmp.xcconfig&#10;">
+               scriptText = "exec &gt; ${PROJECT_DIR}/prebuild.log 2&gt;&amp;1;&#10;SCRIPT_PATH=&quot;${SRCROOT}/.symlinks/plugins/flutter_config/ios/Classes/BuildXCConfig.rb&quot;&#10;if [ ! -f &quot;$SCRIPT_PATH&quot; ]; then SCRIPT_PATH=&quot;${SRCROOT}/../../ios/Classes/BuildXCConfig.rb&quot;; fi&#10;if [ -f &quot;$SCRIPT_PATH&quot; ]; then ruby &quot;$SCRIPT_PATH&quot; &quot;${SRCROOT}/&quot; &quot;${SRCROOT}/Flutter/tmp.xcconfig&quot;; fi&#10;PLIST_SCRIPT=&quot;${SRCROOT}/.symlinks/plugins/flutter_config/ios/Classes/BuildDotenvPlist.rb&quot;&#10;if [ ! -f &quot;$PLIST_SCRIPT&quot; ]; then PLIST_SCRIPT=&quot;${SRCROOT}/../../ios/Classes/BuildDotenvPlist.rb&quot;; fi&#10;if [ -f &quot;$PLIST_SCRIPT&quot; ]; then ruby &quot;$PLIST_SCRIPT&quot; &quot;${SRCROOT}/&quot; &quot;${SRCROOT}/Flutter/GeneratedDotEnv.plist&quot;; fi&#10;">
                <EnvironmentBuildable>
                   <BuildableReference
                      BuildableIdentifier = "primary"
@@ -60,6 +76,7 @@
       buildConfiguration = "Debug-develop"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+      customLLDBInitFile = "$(SRCROOT)/Flutter/ephemeral/flutter_lldbinit"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
       </Testables>
@@ -68,6 +85,7 @@
       buildConfiguration = "Debug-develop"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+      customLLDBInitFile = "$(SRCROOT)/Flutter/ephemeral/flutter_lldbinit"
       launchStyle = "0"
       useCustomWorkingDirectory = "NO"
       ignoresPersistentStateOnLaunch = "NO"

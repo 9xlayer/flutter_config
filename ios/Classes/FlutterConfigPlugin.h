@@ -1,6 +1,1 @@
-#import <Flutter/Flutter.h>
-
-@interface FlutterConfigPlugin : NSObject<FlutterPlugin>
-+ (NSDictionary *)env;
-+ (NSString *)envFor: (NSString *)key;
-@end
+#import "../flutter_config/Sources/flutter_config/include/flutter_config/FlutterConfigPlugin.h"

@@ -56,7 +56,11 @@ Install the latest version of the plugin
 
 Refer to [Android Setup Guide](./doc/ANDROID.md) for initial setup and advanced options
 
-No additional setup is required for iOS, however, for advanced usage refer to the [iOS Setup Guide](./doc/IOS.md)
+For iOS, `flutter_config` supports both **Swift Package Manager (SPM)** and **CocoaPods**.
+- **CocoaPods**: No additional setup is required.
+- **Swift Package Manager (Flutter 3.44+)**: No changes to `pubspec.yaml` needed! Refer to the [iOS Setup Guide](./doc/IOS.md) for initial setup and flavors configuration.
+
+For advanced usage (flavors, `Info.plist`), refer to the [iOS Setup Guide](./doc/IOS.md)
 
 ## Testing
 
