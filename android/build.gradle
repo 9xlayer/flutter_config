@@ -1,9 +1,8 @@
-// Check whether the app project uses built-in Kotlin (Flutter 3.47+ / AGP 9.0+)
-def builtInKotlin = project.rootProject.hasProperty("android.builtInKotlin") ?
-    project.rootProject.property("android.builtInKotlin").toString().toBoolean() :
-    false
-
 buildscript {
+    // Legacy KGP is only needed if app explicitly declares android.builtInKotlin=false
+    def isLegacyKotlin = project.rootProject.hasProperty("android.builtInKotlin") &&
+        !project.rootProject.property("android.builtInKotlin").toString().toBoolean()
+
     def kotlinVer = project.rootProject.hasProperty('kotlin_version') ?
         project.rootProject.property('kotlin_version') : '1.8.22'
 
@@ -14,12 +13,17 @@ buildscript {
 
     dependencies {
         classpath 'com.android.tools.build:gradle:8.7.0'
-        if (!project.rootProject.hasProperty("android.builtInKotlin") ||
-            !project.rootProject.property("android.builtInKotlin").toString().toBoolean()) {
+        if (isLegacyKotlin) {
             classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVer"
         }
     }
 }
+
+// Default to Built-in Kotlin (true) for modern Flutter / AGP 9.0+,
+// unless the app explicitly sets android.builtInKotlin=false in gradle.properties
+def builtInKotlin = project.rootProject.hasProperty("android.builtInKotlin") ?
+    project.rootProject.property("android.builtInKotlin").toString().toBoolean() :
+    true
 
 rootProject.allprojects {
     repositories {
