@@ -66,6 +66,11 @@ android {
     final proguard = File('${tempDir.path}/android/app/proguard-rules.pro');
     expect(proguard.existsSync(), isTrue);
     expect(proguard.readAsStringSync(), contains('-keep class **.BuildConfig { *; }'));
+
+    // 6. Keep rules for resource shrinking
+    final keepXml = File('${tempDir.path}/android/app/src/main/res/raw/keep.xml');
+    expect(keepXml.existsSync(), isTrue);
+    expect(keepXml.readAsStringSync(), contains('tools:keep="@string/build_config_package"'));
   });
 
   test('AndroidSetup configures Kotlin DSL build.gradle.kts with AGP 8+ features', () {
@@ -120,6 +125,11 @@ android {
     final proguard = File('${tempDir.path}/android/app/proguard-rules.pro');
     expect(proguard.existsSync(), isTrue);
     expect(proguard.readAsStringSync(), contains('BuildConfig'));
+
+    // 6. Keep rules for resource shrinking
+    final keepXml = File('${tempDir.path}/android/app/src/main/res/raw/keep.xml');
+    expect(keepXml.existsSync(), isTrue);
+    expect(keepXml.readAsStringSync(), contains('tools:keep="@string/build_config_package"'));
   });
 
   test('AndroidSetup is idempotent when run multiple times on Kotlin DSL', () {
@@ -143,14 +153,39 @@ android {
 
     final content1 = File('${tempDir.path}/android/app/build.gradle.kts').readAsStringSync();
     final proguard1 = File('${tempDir.path}/android/app/proguard-rules.pro').readAsStringSync();
+    final keep1 = File('${tempDir.path}/android/app/src/main/res/raw/keep.xml').readAsStringSync();
 
     final result2 = setup.run();
     expect(result2.success, isTrue);
 
     final content2 = File('${tempDir.path}/android/app/build.gradle.kts').readAsStringSync();
     final proguard2 = File('${tempDir.path}/android/app/proguard-rules.pro').readAsStringSync();
+    final keep2 = File('${tempDir.path}/android/app/src/main/res/raw/keep.xml').readAsStringSync();
 
     expect(content2, equals(content1));
     expect(proguard2, equals(proguard1));
+    expect(keep2, equals(keep1));
+  });
+
+  test('AndroidSetup appends build_config_package to existing keep.xml without overwriting', () {
+    File('${tempDir.path}/.env.dev').writeAsStringSync('API_URL=https://dev\n');
+    File('${tempDir.path}/android/app/build.gradle').writeAsStringSync('''
+android {
+    namespace "com.test"
+}
+''');
+    final rawDir = Directory('${tempDir.path}/android/app/src/main/res/raw')..createSync(recursive: true);
+    File('${rawDir.path}/keep.xml').writeAsStringSync('''<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@layout/my_custom_layout" />
+''');
+
+    final setup = AndroidSetup(tempDir);
+    final result = setup.run();
+    expect(result.success, isTrue);
+
+    final keepContent = File('${rawDir.path}/keep.xml').readAsStringSync();
+    expect(keepContent, contains('@layout/my_custom_layout'));
+    expect(keepContent, contains('@string/build_config_package'));
   });
 }

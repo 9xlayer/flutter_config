@@ -22,6 +22,8 @@ dart run flutter_config:setup --android
    - Detects the app's `namespace` and adds `resValue "string", "build_config_package", "$namespace"` to `defaultConfig` so `FlutterConfig` can find `BuildConfig` even when flavors use custom `applicationId`s.
 5. **R8 / Proguard**:
    - Automatically creates or updates `android/app/proguard-rules.pro` with `-keep class **.BuildConfig { *; }` to prevent env variables from being stripped or obfuscated during release builds.
+6. **R8 Resource Shrinking (`keep.xml`)**:
+   - Automatically creates or updates `android/app/src/main/res/raw/keep.xml` with `tools:keep="@string/build_config_package"` so the package resource is preserved when `shrinkResources true` is enabled in modern AGP (8.0+ / 9.0+).
 
 ---
 
@@ -77,11 +79,27 @@ android {
 }
 ```
 
-#### 2. Proguard / R8 Configuration
+#### 2. Proguard / R8 & Resource Shrinking Configuration
+
+When building for **Release** with code minification (`minifyEnabled true`) and resource shrinking (`shrinkResources true`):
+
+**a) Preserve `BuildConfig` class from code obfuscation:**
 In `android/app/proguard-rules.pro`, add:
 ```proguard
 -keep class **.BuildConfig { *; }
 ```
+
+**b) Preserve `build_config_package` from R8 resource shrinking (AGP 8.0+ / 9.0+):**
+AGP's optimized resource shrinker prunes dynamically queried string resources unless explicitly retained. Create `android/app/src/main/res/raw/keep.xml`:
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/build_config_package" />
+```
+
+> [!IMPORTANT]
+> **Security Note:** Only keep `@string/build_config_package` (which contains solely your application package identifier). **Do NOT** use `tools:keep="@string/*"` as that would preserve all `.env` values in plain text inside the APK's `resources.arsc` file. Environment variables used by Flutter are already securely loaded in memory from `BuildConfig`.
+
 
 ---
 

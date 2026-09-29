@@ -46,6 +46,10 @@ class AndroidSetup implements PlatformSetup {
       final proguardResult = _ensureProguardRules();
       messages.add(proguardResult);
 
+      // 4. Ensure keep.xml preserves build_config_package from R8 resource shrinking
+      final keepResult = _ensureKeepRules();
+      messages.add(keepResult);
+
       return SetupResult(
         success: true,
         messages: messages,
@@ -338,6 +342,60 @@ class AndroidSetup implements PlatformSetup {
         return 'Added BuildConfig keep rule to android/app/proguard-rules.pro';
       } else {
         return 'android/app/proguard-rules.pro already contains BuildConfig rule';
+      }
+    }
+  }
+
+  /// Step 4: Ensure keep.xml preserves build_config_package from R8 resource shrinking
+  String _ensureKeepRules() {
+    final rawDir = Directory('${androidDir.path}/app/src/main/res/raw');
+    final keepFile = File('${rawDir.path}/keep.xml');
+    const targetResource = '@string/build_config_package';
+
+    if (!keepFile.existsSync()) {
+      rawDir.createSync(recursive: true);
+      keepFile.writeAsStringSync('''<?xml version="1.0" encoding="utf-8"?>
+<!-- Preserves build_config_package from R8 resource shrinking in release builds.
+     Only keeps the package identifier without exposing sensitive .env variables. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="$targetResource" />
+''');
+      return 'Created android/app/src/main/res/raw/keep.xml to protect build_config_package from R8 resource shrinking';
+    } else {
+      final content = keepFile.readAsStringSync();
+      if (content.contains('build_config_package')) {
+        return 'android/app/src/main/res/raw/keep.xml already contains build_config_package rule';
+      }
+
+      // Check if tools:keep attribute is present
+      final keepAttrRegex = RegExp(r'tools:keep\s*=\s*["\x27]([^"\x27]+)["\x27]');
+      final match = keepAttrRegex.firstMatch(content);
+      if (match != null) {
+        final existingRules = match.group(1)!;
+        final updated = content.replaceFirst(
+          match.group(0)!,
+          'tools:keep="$existingRules,$targetResource"',
+        );
+        keepFile.writeAsStringSync(updated);
+        return 'Appended build_config_package rule to tools:keep in android/app/src/main/res/raw/keep.xml';
+      } else {
+        final resourcesRegex = RegExp(r'<resources([^>]*)>');
+        if (resourcesRegex.hasMatch(content)) {
+          final updated = content.replaceFirstMapped(resourcesRegex, (m) {
+            final attrs = m.group(1)!;
+            final toolsNs = attrs.contains('xmlns:tools')
+                ? ''
+                : ' xmlns:tools="http://schemas.android.com/tools"';
+            return '<resources$attrs$toolsNs tools:keep="$targetResource">';
+          });
+          keepFile.writeAsStringSync(updated);
+          return 'Added tools:keep rule to android/app/src/main/res/raw/keep.xml';
+        } else {
+          keepFile.writeAsStringSync(
+            '$content\n<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="$targetResource" />\n',
+          );
+          return 'Added build_config_package keep node to android/app/src/main/res/raw/keep.xml';
+        }
       }
     }
   }

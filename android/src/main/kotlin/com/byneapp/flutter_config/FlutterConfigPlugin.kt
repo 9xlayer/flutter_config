@@ -44,14 +44,55 @@ class FlutterConfigPlugin(private val context: Context? = null): FlutterPlugin, 
 
     try {
       val context = applicationContext!!.applicationContext
-      val resId = context.resources.getIdentifier("build_config_package", "string", context.packageName)
-      val className: String = try {
-        context.getString(resId)
+      val candidates = mutableListOf<String>()
+
+      // 1. Try from string resource "build_config_package" (configured via resValue / keep.xml)
+      try {
+        val resId = context.resources.getIdentifier("build_config_package", "string", context.packageName)
+        if (resId != 0) {
+          val resPackage = context.getString(resId).trim()
+          if (resPackage.isNotEmpty() && !candidates.contains(resPackage)) {
+            candidates.add(resPackage)
+          }
+        }
       } catch (e: Resources.NotFoundException) {
-        applicationContext!!.packageName
+        // Ignored: resource not found or stripped by shrinker
       }
 
-      val clazz = Class.forName("$className.BuildConfig")
+      // 2. Try applicationContext.packageName (the applicationId)
+      val appPackage = applicationContext?.packageName
+      if (appPackage != null && !candidates.contains(appPackage)) {
+        candidates.add(appPackage)
+      }
+
+      // 3. Fallback: if appPackage has a flavor suffix (e.g. com.example.app.dev),
+      // try the parent namespace (com.example.app)
+      if (appPackage != null && appPackage.contains(".")) {
+        val parentPackage = appPackage.substringBeforeLast(".")
+        if (!candidates.contains(parentPackage)) {
+          candidates.add(parentPackage)
+        }
+      }
+
+      // Attempt to load BuildConfig class from candidates
+      var clazz: Class<*>? = null
+      for (candidate in candidates) {
+        try {
+          clazz = Class.forName("$candidate.BuildConfig")
+          break
+        } catch (e: ClassNotFoundException) {
+          // Continue to next candidate
+        }
+      }
+
+      if (clazz == null) {
+        Log.w(
+          "FlutterConfig",
+          "Could not access BuildConfig class for candidates: $candidates. " +
+          "Ensure buildFeatures.buildConfig = true, and check proguard-rules.pro / keep.xml."
+        )
+        return variables
+      }
 
       fun extractValue(f: Field): Any? {
         return try {
@@ -66,8 +107,8 @@ class FlutterConfigPlugin(private val context: Context? = null): FlutterPlugin, 
       clazz.declaredFields.forEach {
         variables += it.name to extractValue(it)
       }
-    } catch (e: ClassNotFoundException) {
-      Log.d("FlutterConfig", "Could not access BuildConfig")
+    } catch (e: Exception) {
+      Log.w("FlutterConfig", "Error loading environment variables: ${e.message}")
     }
     return variables
   }
