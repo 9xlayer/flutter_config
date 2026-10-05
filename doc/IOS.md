@@ -1,84 +1,174 @@
-## iOS Advanced Setup
+## iOS Setup Guide
 
-No additional setup is required is you are only reading env varibles from Obj-C/Swift code.
+`flutter_config` supports both **Swift Package Manager (SPM)** (default in Flutter 3.44+) and **CocoaPods**.
 
-Read variables declared in `.env` from your Obj-C classes like:
+### Automated Setup (Recommended)
 
+You can automatically configure your iOS project with a single command from your Flutter project root:
+
+```bash
+dart run flutter_config:setup --ios
+```
+
+*(You can also use `dart run flutter_config:setup ios` or `dart run flutter_config:setup` to configure both iOS and Android)*
+
+#### What the automated CLI does:
+1. **Creates placeholder plist**: Generates `ios/Flutter/GeneratedDotEnv.plist` so Xcode has a valid file reference immediately.
+2. **Updates build configurations**: Adds `#include? "tmp.xcconfig"` to `Debug.xcconfig` and `Release.xcconfig` (enabling `$(KEY)` in `Info.plist`).
+3. **Mocks into `project.pbxproj`**: Automatically adds `GeneratedDotEnv.plist` to **Copy Bundle Resources** without requiring Xcode GUI drag & drop.
+4. **Auto-configures Xcode Build Settings (`project.pbxproj`)**:
+   - Detects `BUNDLE_ID` and `APPLE_TEAM_ID` from your `.env.*` files.
+   - Automatically replaces hardcoded `PRODUCT_BUNDLE_IDENTIFIER` with `"${BUNDLE_ID}"`.
+   - Automatically replaces hardcoded `DEVELOPMENT_TEAM` with `"${APPLE_TEAM_ID}"`.
+   - Fully idempotent: leaves existing variable references intact.
+5. **Configures `Info.plist`**:
+   - Detects app name keys (`APP_NAME`, `APP_DISPLAY_NAME`) from env files and ensures `CFBundleDisplayName = $(APP_NAME)`.
+   - Ensures `CFBundleIdentifier` uses `$(PRODUCT_BUNDLE_IDENTIFIER)`.
+6. **Auto-detects Flavors & Generates Schemes**:
+   - Scans your project root and `env/` subdirectory for `.env.*` files (e.g., `.env.dev`, `.env.staging`, `.env.prod`).
+   - If an Xcode scheme for that flavor doesn't exist, the CLI **automatically creates the `<flavor>.xcscheme`** file in `ios/Runner.xcodeproj/xcshareddata/xcschemes/`!
+   - Configures the scheme's Pre-actions to bind to the matching `.env.<flavor>` file.
+7. **Migrates Legacy Scripts**:
+   - If your schemes already contain older/legacy `flutter_config` scripts (e.g. from CocoaPods), the CLI automatically detects and upgrades them to the latest Swift Package Manager (SPM) script while leaving non-`flutter_config` scripts intact.
+8. **Updates `.gitignore`**: Adds `**/ios/Flutter/tmp.xcconfig` to `.gitignore`.
+
+#### Running Flavors after setup:
+```bash
+# Default scheme (reads .env):
+flutter run
+
+# Flavor schemes (reads .env.dev, .env.staging, .env.prod):
+flutter run --flavor dev
+flutter run --flavor staging
+flutter run --flavor prod
+```
+
+---
+
+### Manual Setup with Swift Package Manager (SPM) (Alternative)
+
+If you prefer to configure Xcode manually:
+
+Under Swift Package Manager, variables are securely passed into the app bundle at build time using a binary property list (`GeneratedDotEnv.plist`), **without requiring any `.env` files in `pubspec.yaml` `assets:`**. This prevents exposing raw `.env` files or leaking cross-flavor secrets.
+
+1. In the Xcode menu, go to **Product > Scheme > Edit Scheme...**.
+
+   ![Product > Scheme > Edit Scheme](./pic2.png)
+
+2. Under **Build > Pre-actions**, click the **+** button at the bottom and select **New Run Script Action** (do this twice to create 2 Run Script blocks).
+
+   ![New Run Script Action in Pre-actions](./pic3.png)
+
+3. In each **Run Script** box, you will see:
+   - **Shell**: Leave as `/bin/sh`.
+   - **Provide build settings from**: Select `Runner` (or keep `None`).
+   - **Text editor area (the large dark box with line numbers `1, 2...`)**: **Paste the script code here.**
+
+   ---
+
+   **First Run Script Box (Action 1 - Specify .env file):**
+   Paste into the code editor of the first block:
+   ```bash
+   echo ".env" > $(dirname $WORKSPACE_PATH)/.envfile
+   ```
+
+   **Second Run Script Box (Action 2 - Generate tmp.xcconfig & GeneratedDotEnv.plist):**
+   Paste into the code editor of the second block:
+   ```bash
+   SRCROOT=$(dirname $WORKSPACE_PATH)
+   
+   # 1. Generate tmp.xcconfig for Info.plist & Build Settings
+   SCRIPT_XC="${SRCROOT}/.symlinks/plugins/flutter_config/ios/Classes/BuildXCConfig.rb"
+   if [ ! -f "$SCRIPT_XC" ]; then SCRIPT_XC="${SRCROOT}/Flutter/ephemeral/Packages/.packages/flutter_config/Sources/flutter_config/BuildXCConfig.rb"; fi
+   if [ ! -f "$SCRIPT_XC" ]; then SCRIPT_XC=$(find "$BUILD_DIR/../../SourcePackages" -name "BuildXCConfig.rb" 2>/dev/null | head -n 1); fi
+   if [ ! -f "$SCRIPT_XC" ]; then SCRIPT_XC="${SRCROOT}/../../ios/Classes/BuildXCConfig.rb"; fi
+   if [ -f "$SCRIPT_XC" ]; then ruby "$SCRIPT_XC" "${SRCROOT}/" "${SRCROOT}/Flutter/tmp.xcconfig"; fi
+
+   # 2. Generate GeneratedDotEnv.plist for SwiftPM Native & Dart
+   SCRIPT_PLIST="${SRCROOT}/.symlinks/plugins/flutter_config/ios/Classes/BuildDotenvPlist.rb"
+   if [ ! -f "$SCRIPT_PLIST" ]; then SCRIPT_PLIST="${SRCROOT}/Flutter/ephemeral/Packages/.packages/flutter_config/Sources/flutter_config/BuildDotenvPlist.rb"; fi
+   if [ ! -f "$SCRIPT_PLIST" ]; then SCRIPT_PLIST=$(find "$BUILD_DIR/../../SourcePackages" -name "BuildDotenvPlist.rb" 2>/dev/null | head -n 1); fi
+   if [ ! -f "$SCRIPT_PLIST" ]; then SCRIPT_PLIST="${SRCROOT}/../../ios/Classes/BuildDotenvPlist.rb"; fi
+   if [ -f "$SCRIPT_PLIST" ]; then ruby "$SCRIPT_PLIST" "${SRCROOT}/" "${SRCROOT}/Flutter/GeneratedDotEnv.plist"; fi
+   ```
+
+   > **Tip:** You can also combine both scripts into a single Run Script block if you prefer.
+
+   After pasting, your **Pre-actions** panel will look exactly like this:
+
+   ![Pre-actions Run Script Setup](./pic5.png)
+
+4. Ensure `Flutter/GeneratedDotEnv.plist` is included in **Runner > Build Phases > Copy Bundle Resources** (drag it into Xcode).
+5. Make sure you select `Runner` from the `Provide build settings from` dropdown in Pre-actions (or leave as `None` if using `$WORKSPACE_PATH`).
+
+---
+
+### Usage with CocoaPods (Legacy / Existing Projects)
+
+If your iOS project is still using CocoaPods:
+- **No additional setup is required** if you only read environment variables from Dart or native Obj-C/Swift code.
+- CocoaPods automatically executes the plugin's code generation (`s.script_phase`) during build to compile variables directly into machine code.
+- If you also need variables available inside `Info.plist`, see the section below.
+
+---
+
+### Reading Variables in Native Code
+
+**Objective-C:**
 ```objective-c
 // import header
 #import "FlutterConfigPlugin.h"
 
-// then read individual keys like:
+// read individual keys:
 NSString *apiUrl = [FlutterConfigPlugin envFor:@"API_URL"];
 
-// or just fetch the whole config
+// or fetch the whole config:
 NSDictionary *config = [FlutterConfigPlugin env];
 ```
 
-### Availability in Build settings and Info.plist
+**Swift:**
+```swift
+import flutter_config
 
-Extra steps are required if you are reading env varibles from your `info.plist` file
+let apiUrl = flutter_config.FlutterConfigPlugin.env(for: "API_URL")
+let config = flutter_config.FlutterConfigPlugin.env()
+```
 
-1. Under `Runner/Flutter`:
-   ![img](./pic1.png)
-   You need to add the following code to both `Debug.xcconfig` and `Release.xcconfig`
+---
+
+### Availability in Build Settings and Info.plist
+
+To read env variables in your `Info.plist` file:
+
+1. Under `Runner/Flutter` in Xcode's project navigator:
+   Add the following line to both `Debug.xcconfig` and `Release.xcconfig`:
 
    ```objective-c
    #include? "tmp.xcconfig"
    ```
 
-   It is also recommended to add this file to gitignore
-   ```
+   ![Xcode Project Navigator - Debug and Release xcconfig](./pic1.png)
+
+   Add this file to `.gitignore`:
+   ```text
    **/ios/Flutter/tmp.xcconfig
+   **/ios/Flutter/GeneratedDotEnv.plist
    ```
 
+---
 
-2. In the Xcode menu, go to Product > Scheme > Edit Scheme
-   ![img](./pic2.png)
+### Different Environments (Flavors)
 
-3. under Build > Pre-actions you need to add 2 new run script actions with the following code:
-   ![img](./pic3.png)
+To alternate between different environments (e.g. `.env.staging`, `.env.production`):
 
-   ```
-   echo ".env" > $(dirname $WORKSPACE_PATH)/.envfile
-   ```
-
-   ```
-   SRCROOT=$(dirname $WORKSPACE_PATH)
-   ${SRCROOT}/.symlinks/plugins/flutter_config/ios/Classes/BuildXCConfig.rb ${SRCROOT}/ ${SRCROOT}/Flutter/tmp.xcconfig
+1. In Xcode, duplicate the Runner scheme (e.g., "staging" or "production").
+2. In **Build > Pre-actions** for that scheme, change the first script action:
+   ```bash
+   echo ".env.staging" > $(dirname $WORKSPACE_PATH)/.envfile
    ```
 
-4. Make sure you select `Runner` from the `Provide build settings from` dropdown
+   ![Flavors Pre-actions Setup](./pic4.png)
 
-   Your finished scripts should l ook like this:
-   ![img](./pic5.png)
-
-5. By default, you should only need to do this for the runner scheme if you only have one environment.
-
-This should now create a `tmp.xcconfig` file which can be accessed by `info.plist`
-
-### Different environments
-
-The basic idea in iOS is to have one scheme per environment file, so you can easily alternate between them.
-
-Start by creating a new scheme:
-
-- In the Xcode menu, go to Product > Scheme > Edit Scheme
-- Click Duplicate Scheme on the bottom
-- Give it a proper name on the top left. For instance: "Myapp (staging)"
-
-#### NOTE
-You need to make sure that your scheme name matches the `flavor` name which you defined on the flutter side of things
-eg. `flutter run ios --flavor develop`
-
-Then edit the newly created scheme to make it use a different env file. From the same "manage scheme" window:
-
-In the Xcode menu, go to Product > Scheme > Manage Schemes > select your scheme > Click edit
-
-- Follow steps 3 and 4 again for each scheme and replace you env files
-
-```
-echo ".env.staging" > $(dirname $WORKSPACE_PATH)/.envfile   # replace .env.staging for your file
-```
-
-This is still a bit experimental and dirty – let us know if you have a better idea on how to make iOS use different configurations opening a pull request or issue!
+3. That's it! When building that scheme:
+   - Only `.env.staging` will be read and bundled as `GeneratedDotEnv.plist`.
+   - Production keys or other flavor keys will **never** be included in that build.

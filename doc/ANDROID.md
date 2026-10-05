@@ -1,25 +1,107 @@
-## Android Setup
+## Android Setup Guide
 
-**The following steps are required for Android**
+### Automated Setup (Recommended)
 
-You need to manually apply a plugin to your app, from `android/app/build.gradle`:
+You can automatically configure your Android project with a single command from your Flutter project root:
 
-Right below `apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"`
+```bash
+dart run flutter_config:setup --android
+```
 
-add the following line:
+*(You can also use `dart run flutter_config:setup android` or `dart run flutter_config:setup` to configure both iOS and Android)*
 
-`apply from: project(':flutter_config').projectDir.getPath() + "/dotenv.gradle"`
+#### What the automated CLI does:
+1. **Auto-detects Flavors & Maps `envConfigFiles`**:
+   - Scans project root and `env/` directory for `.env.*` files (e.g., `.env.dev`, `.env.staging`, `.env.prd`).
+   - Automatically generates the `envConfigFiles` mapping (`project.ext.envConfigFiles = [...]` in Groovy or `project.extra["envConfigFiles"] = mapOf(...)` in Kotlin DSL).
+2. **Applies `dotenv.gradle`**:
+   - Automatically adds `dotenv.gradle` right before the `android { ... }` block in `build.gradle` or `build.gradle.kts`.
+3. **Enables `buildConfig = true` (AGP 8.0+ Compatibility)**:
+   - Android Gradle Plugin 8+ disables `BuildConfig` generation by default. The CLI automatically adds `buildFeatures.buildConfig = true` inside `android { ... }`.
+4. **Configures `build_config_package`**:
+   - Detects the app's `namespace` and adds `resValue "string", "build_config_package", "$namespace"` to `defaultConfig` so `FlutterConfig` can find `BuildConfig` even when flavors use custom `applicationId`s.
+5. **R8 / Proguard**:
+   - Automatically creates or updates `android/app/proguard-rules.pro` with `-keep class **.BuildConfig { *; }` to prevent env variables from being stripped or obfuscated during release builds.
+6. **R8 Resource Shrinking (`keep.xml`)**:
+   - Automatically creates or updates `android/app/src/main/res/raw/keep.xml` with `tools:keep="@string/build_config_package"` so the package resource is preserved when `shrinkResources true` is enabled in modern AGP (8.0+ / 9.0+).
 
-**Building a release version**
+---
 
-When building your apk for release, the R8 code shrinker obfuscates the `BuildConfig` class which holds all the env variables and thus causes all the env variables to be null. To prevent this, the following has to be done:
+### Manual Setup (Alternative)
 
-1. Add file `android/app/proguard-rules.pro` to your app's project.
-2. Add the below line to the newly created `proguard-rules.pro` file:
-    ```
-    -keep class com.yourcompany.app.BuildConfig { *; }
-    ```
-    where `com.yourcompany.app` should be replaced with your app's package name.
+If you prefer to configure Android manually instead of using `dart run flutter_config:setup --android`:
+
+#### 1. In `android/app/build.gradle.kts` (Kotlin DSL) or `build.gradle` (Groovy):
+
+**Kotlin DSL (`build.gradle.kts`):**
+```kotlin
+// If using flavors:
+project.extra["envConfigFiles"] = mapOf(
+    "dev" to "env/.env.dev",
+    "staging" to "env/.env.staging",
+    "prd" to "env/.env.prd"
+)
+
+apply(from = "${project(":flutter_config").projectDir}/dotenv.gradle")
+
+android {
+    namespace = "com.yourcompany.app"
+    buildFeatures.buildConfig = true // Required for AGP 8.0+
+
+    defaultConfig {
+        ...
+        resValue("string", "build_config_package", "com.yourcompany.app")
+    }
+}
+```
+
+**Groovy DSL (`build.gradle`):**
+```groovy
+// If using flavors:
+project.ext.envConfigFiles = [
+    dev: "env/.env.dev",
+    staging: "env/.env.staging",
+    prd: "env/.env.prd",
+]
+
+apply from: project(':flutter_config').projectDir.getPath() + "/dotenv.gradle"
+
+android {
+    namespace "com.yourcompany.app"
+    buildFeatures {
+        buildConfig true // Required for AGP 8.0+
+    }
+
+    defaultConfig {
+        ...
+        resValue "string", "build_config_package", "com.yourcompany.app"
+    }
+}
+```
+
+#### 2. Proguard / R8 & Resource Shrinking Configuration
+
+When building for **Release** with code minification (`minifyEnabled true`) and resource shrinking (`shrinkResources true`):
+
+**a) Preserve `BuildConfig` class from code obfuscation:**
+In `android/app/proguard-rules.pro`, add:
+```proguard
+-keep class **.BuildConfig { *; }
+```
+
+**b) Preserve `build_config_package` from R8 resource shrinking (AGP 8.0+ / 9.0+):**
+AGP's optimized resource shrinker prunes dynamically queried string resources unless explicitly retained. Create `android/app/src/main/res/raw/keep.xml`:
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/build_config_package" />
+```
+
+> [!IMPORTANT]
+> **Security Note:** Only keep `@string/build_config_package` (which contains solely your application package identifier). **Do NOT** use `tools:keep="@string/*"` as that would preserve all `.env` values in plain text inside the APK's `resources.arsc` file. Environment variables used by Flutter are already securely loaded in memory from `BuildConfig`.
+
+
+---
 
 ## Usage in Java/Kotlin Code
 
@@ -27,14 +109,14 @@ Config variables set in `.env` are available to your Java or Kotlin classes via 
 
 ```kotlin
 fun getApiClient(): HttpURLConnection {
-    val url = URL(BuildConfig.API_URL);
+    val url = URL(BuildConfig.API_URL)
     // ...
 }
 ```
 
 ## Usage in Gradle
 
-You can read environment varibles from your Gradle configuration:
+You can read environment variables in your Gradle configuration:
 
 ```groovy
 defaultConfig {
@@ -42,81 +124,24 @@ defaultConfig {
 }
 ```
 
-## Usage in XML files
+## Usage in AndroidManifest.xml
 
-You can use env variables to configure libraries in `AndroidManifest.xml` and other xml files:
+You can use env variables to configure libraries in `AndroidManifest.xml`:
 
 ```xml
 <meta-data
-  android:name="com.google.android.geo.API_KEY"
-  android:value="@string/GOOGLE_MAPS_API_KEY" />
+    android:name="com.google.android.geo.API_KEY"
+    android:value="@string/GOOGLE_MAPS_API_KEY" />
 ```
 
-## Different environments
+## Kotlin Compatibility (Flutter 3.47+ & Legacy KGP)
 
-Save config for different environments in different files: `.env.staging`, `.env.production`, etc.
+`flutter_config` defaults to **Built-in Kotlin** (`android.builtInKotlin=true`) to be ready for **Flutter 3.47+** and **Android Gradle Plugin 9.0+**.
 
-The same environment variable can be used to assemble releases with a different config:
+- **Modern Flutter (3.47+ / AGP 9.0+)**: No extra configuration needed. Built-in Kotlin is active by default.
+- **Legacy Flutter Projects (using KGP / AGP < 9.0)**: Ensure your `android/gradle.properties` contains:
+  ```properties
+  android.builtInKotlin=false
+  ```
+  `flutter_config` will automatically detect this flag and fall back to the legacy `kotlin-android` plugin.
 
-```
-$ cd android && ENVFILE=.env.staging ./gradlew assembleRelease
-```
-
-Alternatively, you can define a map in `build.gradle` associating builds with env files. Do it before the `apply from` call, and use build cases in lowercase, like:
-
-```
-project.ext.envConfigFiles = [
-    debug: ".env.development",
-    release: ".env.production",
-    anothercustombuild: ".env",
-]
-
-apply from: project(':flutter_config').projectDir.getPath() + "/dotenv.gradle"
-```
-
-## Different Package Names
-
-In `android/app/build.gradle`, if you use `applicationIdSuffix` or `applicationId` that is different from the package name indicated in `AndroidManifest.xml` in `<manifest package="...">` tag, for example, to support different build variants:
-Add this in `android/app/build.gradle`
-
-```
-defaultConfig {
-    ...
-    resValue "string", "build_config_package", "YOUR_PACKAGE_NAME_IN_ANDROIDMANIFEST.XML"
-}
-```
-
-## Note
-
-All variables are strings, so you may need to cast them. For instance, in Gradle:
-
-```
-versionCode project.env.get("VERSION_CODE").toInteger()
-```
-
-Once again, remember variables stored in `.env` are published with your code, so **DO NOT put anything sensitive there like your app `signingConfigs`.**
-
-This plugin is written in Kotlin. Therefore, you need to make sure you have Kotlin support in your project your project. See [installing the Kotlin plugin](https://kotlinlang.org/docs/tutorials/kotlin-android.html#installing-the-kotlin-plugin).
-
-Edit your project-level build.gradle file to look like this:
-
-    buildscript {
-        ext.kotlin_version = '1.3.31'
-        ...
-        dependencies {
-            ...
-            classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
-        }
-    }
-    ...
-
-Edit your app-level build.gradle file to look like this:
-
-    apply plugin: 'kotlin-android'
-    ...
-    dependencies {
-        implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-        ...
-    }
-
-You also need to make sure you are on the latest version of gradle

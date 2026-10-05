@@ -1,8 +1,11 @@
-group 'com.byneapp.flutter_config'
-version '1.0-SNAPSHOT'
-
 buildscript {
-    ext.kotlin_version = '1.8.22'
+    // Legacy KGP is only needed if app explicitly declares android.builtInKotlin=false
+    def isLegacyKotlin = project.rootProject.hasProperty("android.builtInKotlin") &&
+        !project.rootProject.property("android.builtInKotlin").toString().toBoolean()
+
+    def kotlinVer = project.rootProject.hasProperty('kotlin_version') ?
+        project.rootProject.property('kotlin_version') : '1.8.22'
+
     repositories {
         google()
         mavenCentral()
@@ -10,9 +13,17 @@ buildscript {
 
     dependencies {
         classpath 'com.android.tools.build:gradle:8.7.0'
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        if (isLegacyKotlin) {
+            classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVer"
+        }
     }
 }
+
+// Default to Built-in Kotlin (true) for modern Flutter / AGP 9.0+,
+// unless the app explicitly sets android.builtInKotlin=false in gradle.properties
+def builtInKotlin = project.rootProject.hasProperty("android.builtInKotlin") ?
+    project.rootProject.property("android.builtInKotlin").toString().toBoolean() :
+    true
 
 rootProject.allprojects {
     repositories {
@@ -22,7 +33,11 @@ rootProject.allprojects {
 }
 
 apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
+
+// Only apply KGP for legacy Flutter / AGP < 9 when built-in Kotlin is disabled
+if (!builtInKotlin) {
+    apply plugin: 'kotlin-android'
+}
 
 android {
     if (project.android.hasProperty('namespace')) { 
@@ -36,8 +51,10 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = '17'
+    if (!builtInKotlin) {
+        kotlinOptions {
+            jvmTarget = '17'
+        }
     }
 
     sourceSets {
@@ -57,6 +74,15 @@ android {
     }
 }
 
-// dependencies {
-   // implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
-// }
+// Configure compilerOptions for Built-in Kotlin (Flutter 3.47+ / AGP 9.0+)
+if (builtInKotlin) {
+    try {
+        kotlin {
+            compilerOptions {
+                jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+            }
+        }
+    } catch (Throwable ignored) {
+        // Fallback if DSL differs across AGP milestones
+    }
+}

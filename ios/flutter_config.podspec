@@ -12,20 +12,19 @@ Config Variables for your Flutter Apps.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Your Company' => 'email@example.com' }
   s.source           = { :path => '.' }
-  s.source_files = 'Classes/**/*'
-  s.public_header_files = 'Classes/**/*.h'
+  s.source_files = 'flutter_config/Sources/flutter_config/**/*.{h,m}'
+  s.public_header_files = 'flutter_config/Sources/flutter_config/include/**/*.h'
   s.dependency 'Flutter'
 
-  # s.ios.deployment_target = '10.0'
+  s.ios.deployment_target = '13.0'
   s.script_phase = {
     name: 'Config codegen',
     script: %(
 set -ex
 HOST_PATH="$SRCROOT/../"
-"${PODS_TARGET_SRCROOT}/Classes/BuildDotenvConfig.rb" "$HOST_PATH" "${PODS_TARGET_SRCROOT}/Classes"
+"${PODS_TARGET_SRCROOT}/flutter_config/Sources/flutter_config/BuildDotenvConfig.rb" "$HOST_PATH" "${PODS_TARGET_SRCROOT}/flutter_config/Sources/flutter_config"
 ),
     execution_position: :before_compile,
-    input_files: ['$(SRCROOT)/Classes/BuildDotenvConfig.rb']
+    input_files: ['$(PODS_TARGET_SRCROOT)/flutter_config/Sources/flutter_config/BuildDotenvConfig.rb']
   }
 end
-
